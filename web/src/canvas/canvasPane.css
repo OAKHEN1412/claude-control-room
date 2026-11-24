@@ -1,0 +1,414 @@
+/* Pane nodes, wires, ports, the slide-out drawer and semantic zoom (UI v2). Prefix cv- like canvas.css. */
+
+/* ---- ports that start a wire ---- */
+.cv-node[data-kind="session"] .cv-out,
+.cv-out-sub { pointer-events: auto; cursor: crosshair; }
+.cv-node[data-kind="session"] .cv-out::before,
+.cv-out-sub::before { content: ''; position: absolute; inset: -9px; border-radius: 50%; }
+.cv-node[data-kind="session"] .cv-out:hover,
+.cv-out-sub:hover,
+.cv-root.is-wiring .cv-out { border-color: #ffffff; }
+.cv-out-sub {
+  position: absolute;
+  right: -7px;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: #000;
+  border: 2px solid #8a8a8a;
+}
+
+/* "+" stub hanging off a session's output port: adds a pane connected to it */
+.cv-stub { position: absolute; left: calc(100% + 6px); top: 50%; width: 20px; height: 2px; margin-top: -1px; background: #5c5c5c; pointer-events: none; }
+.cv-plus {
+  position: absolute;
+  left: calc(100% + 26px);
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  margin-top: -11px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  color: #cfcfcf;
+  background: #000;
+  border: 2px solid #5c5c5c;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.cv-plus:hover { color: #fff; border-color: #cfcfcf; }
+.cv-plus:focus-visible { outline: 2px solid #cfcfcf; outline-offset: 2px; }
+/* a session that already has panes shows its stub only on hover / focus */
+.cv-stub.is-wired,
+.cv-plus.is-wired { opacity: 0; transition: opacity 0.12s ease; }
+.cv-node:hover .cv-stub.is-wired,
+.cv-node:hover .cv-plus.is-wired,
+.cv-node:focus-within .cv-stub.is-wired,
+.cv-plus.is-wired:focus-visible { opacity: 1; }
+
+/* ---- wires from AI blocks to panes ---- */
+.cv-wire { stroke: #8a8a8a; stroke-width: 2.4px; }
+.cv-wire.is-sel { stroke: #ffffff; stroke-width: 3.6px; }
+.cv-wire.is-live { stroke: #e8e8e8; stroke-dasharray: 7 5; stroke-width: 2.6px; }
+.cv-wire-hit { fill: none; stroke: transparent; stroke-width: 16px; pointer-events: stroke; cursor: pointer; }
+.cv-edges-top { z-index: 100000; }
+.cv-wire-x {
+  position: absolute;
+  z-index: 100001;
+  width: 24px;
+  height: 24px;
+  margin: -12px 0 0 -12px;
+  padding: 0;
+  font: inherit;
+  font-size: 17px;
+  line-height: 1;
+  color: #000;
+  background: #e8e8e8;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.cv-wire-x:hover { background: #ffffff; }
+.cv-sep { width: 1px; height: 20px; margin: 0 2px; background: var(--line-2); }
+
+/* ---- pane node ---- */
+.cv-pane {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: #0a0a0a;
+  border: 1.5px solid #404040;
+  border-radius: 12px;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.7);
+  cursor: default;
+  color: var(--text);
+  font-family: var(--font-ui);
+  outline: none;
+}
+.cv-pane.is-focused { border-color: #8a8a8a; }
+.cv-pane.is-limit, .cv-pane.is-limit.is-focused { border-color: var(--error); }
+.cv-pane.is-limit .cv-pane-sub, .cv-drawer.is-limit .cv-pane-sub { color: var(--error); font-weight: 600; }
+.cv-pane.is-limit .cv-pane-dot, .cv-drawer.is-limit .cv-pane-dot { background: var(--error) !important; }
+.cv-drawer.is-limit { border-left: 2px solid var(--error); }
+.cv-pane.is-hot { border-color: #ffffff; box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.25), 0 10px 34px rgba(0, 0, 0, 0.7); }
+.cv-pane:focus-visible { outline: 2px solid #cfcfcf; outline-offset: 3px; }
+
+/* titles grow in world units as you zoom out (--cs, see lod.ts) so they stay readable */
+.cv-pane-title {
+  flex: none;
+  height: calc(36px * var(--cs, 1));
+  display: flex;
+  align-items: center;
+  gap: calc(8px * var(--cs, 1));
+  padding: 0 calc(6px * var(--cs, 1)) 0 calc(12px * var(--cs, 1));
+  background: #111111;
+  border-bottom: 1px solid #262626;
+  border-radius: 11px 11px 0 0;
+  cursor: grab;
+  overflow: hidden;
+}
+.cv-pane-title:active { cursor: grabbing; }
+.cv-pane-dot { flex: none; width: calc(9px * var(--cs, 1)); height: calc(9px * var(--cs, 1)); border-radius: 50%; }
+.cv-pane-name {
+  min-width: 0;
+  flex: 0 1 auto;
+  font-size: calc(13px * var(--cs, 1));
+  font-weight: 600;
+  color: #f2f2f2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cv-pane-sub {
+  min-width: 0;
+  flex: 1 1 0;
+  font-family: var(--font-mono);
+  font-size: calc(11.5px * var(--cs, 1));
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cv-pane-x {
+  flex: none;
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.cv-pane-x:hover { color: var(--text); background: #1f1f1f; }
+
+.cv-pane-body { flex: 1; min-height: 0; position: relative; }
+.cv-pv { position: relative; height: 100%; display: flex; min-height: 0; }
+.cv-pv-main { flex: 1; min-width: 0; position: relative; height: 100%; }
+
+/* the log fills the pane; the scrollbar is hidden, wheel / touch scrolling still work */
+.cv-pane-log,
+.cv-drawer .cp-scroll.is-term {
+  scrollbar-width: none;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: auto;
+}
+.cv-pane-log::-webkit-scrollbar,
+.cv-drawer .cp-scroll.is-term::-webkit-scrollbar { display: none; width: 0; height: 0; }
+.cv-pv .cc-pendlist { max-height: 40%; overflow: auto; scrollbar-width: none; flex: none; padding-top: 6px; background: #000; }
+.cv-pv .cc-pendlist::-webkit-scrollbar { display: none; }
+
+.cv-latest {
+  position: absolute;
+  left: 50%;
+  bottom: 74px;
+  transform: translateX(-50%);
+  z-index: 3;
+  min-height: 26px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 12px;
+  color: #000;
+  background: #e8e8e8;
+  border: 0;
+  border-radius: 13px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
+  cursor: pointer;
+}
+.cv-latest:hover { background: #ffffff; }
+
+.cv-agenthead {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  background: #111111;
+  border-bottom: 1px solid #262626;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  min-width: 0;
+}
+.cv-agenthead-text { flex: 1; min-width: 0; color: var(--text); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cv-link {
+  flex: none;
+  max-width: 45%;
+  padding: 0;
+  font: inherit;
+  color: #cfcfcf;
+  background: none;
+  border: 0;
+  text-decoration: underline dotted;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.cv-link:hover { color: #fff; }
+.cv-agentnote { display: flex; flex-direction: column; gap: 6px; font-family: var(--font-mono); font-size: 12.5px; color: #cfcfcf; }
+.cv-unconnected { align-items: center; justify-content: center; text-align: center; gap: 6px; }
+.cv-unconnected-title { font-size: 16px; font-weight: 600; color: #cfcfcf; }
+.cv-unconnected-hint { font-size: 12.5px; color: var(--muted); }
+
+/* ---- side rail with flyouts ---- */
+.cv-rail {
+  flex: none;
+  width: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 0;
+  background: #0f0f0f;
+  border-left: 1px solid #262626;
+  border-radius: 0 0 11px 0;
+}
+.cv-rail-btn {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.cv-rail-btn:hover:not(:disabled) { color: #fff; background: #1f1f1f; border-color: var(--line-2); }
+.cv-rail-btn[aria-pressed="true"] { color: #fff; background: #262626; border-color: var(--line-2); }
+.cv-rail-btn:disabled { color: #4a4a4a; cursor: not-allowed; }
+.cv-rail-btn.is-danger { color: var(--error); border-color: var(--error); }
+.cv-rail-btn:focus-visible { outline: 2px solid #cfcfcf; outline-offset: 1px; }
+.cv-rail-sep { width: 22px; height: 1px; margin: 2px 0; background: var(--line); }
+.cv-rail-confirm { font-size: 10.5px; line-height: 1.1; color: var(--error); text-align: center; }
+.cv-rail-err { font-size: 12px; font-weight: 700; color: var(--error); }
+
+.cv-fly {
+  position: absolute;
+  top: 8px;
+  right: 52px;
+  z-index: 4;
+  width: min(300px, calc(100% - 64px));
+  max-height: calc(100% - 16px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #111111;
+  border: 1px solid #404040;
+  border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.75);
+}
+.cv-fly-title { font-size: 12px; font-weight: 600; color: var(--muted); }
+.cv-fly .cp-select { min-height: 36px; width: 100%; }
+.cv-fly .cc-chips { max-height: 220px; overflow: auto; }
+
+/* ---- input port and resize corner ---- */
+.cv-pane-in {
+  position: absolute;
+  left: -9px;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  margin-top: -8px;
+  padding: 0;
+  background: #000;
+  border: 2px solid #8a8a8a;
+  border-radius: 50%;
+  cursor: crosshair;
+}
+.cv-pane-in::before { content: ''; position: absolute; inset: -10px; border-radius: 50%; }
+.cv-pane-in:hover,
+.cv-pane.is-hot .cv-pane-in { border-color: #ffffff; background: #333333; }
+.cv-pane-in:focus-visible { outline: 2px solid #cfcfcf; outline-offset: 2px; }
+.cv-pane.is-empty .cv-pane-in { border-style: dashed; }
+.cv-pane-resize {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  width: 20px;
+  height: 20px;
+  cursor: nwse-resize;
+  background: linear-gradient(135deg, transparent 0 55%, #5c5c5c 55% 62%, transparent 62% 72%, #5c5c5c 72% 79%, transparent 79%);
+  border-radius: 0 0 11px 0;
+}
+.cv-pane-resize:hover { filter: brightness(1.6); }
+
+/* ---- slide-out drawer ---- */
+.cv-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #0a0a0a;
+  border-left: 1px solid #404040;
+  box-shadow: -14px 0 40px rgba(0, 0, 0, 0.7);
+  cursor: default;
+  user-select: text;
+  animation: cv-slide-in var(--slide, 200ms) ease-out both;
+}
+.cv-drawer.is-closing { animation: cv-slide-out var(--slide, 200ms) ease-in both; pointer-events: none; }
+@keyframes cv-slide-in { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes cv-slide-out { from { transform: translateX(0); } to { transform: translateX(100%); } }
+.cv-drawer-edge { position: absolute; left: -5px; top: 0; bottom: 0; width: 10px; cursor: ew-resize; z-index: 2; touch-action: none; }
+.cv-drawer-edge:hover,
+.cv-drawer-edge:focus-visible { background: rgba(255, 255, 255, 0.18); outline: none; }
+.cv-drawer-head { flex: none; height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 14px; background: #111111; border-bottom: 1px solid #262626; min-width: 0; }
+.cv-drawer-head .cv-pane-x { margin-left: 0; }
+.cv-drawer-pin {
+  flex: none;
+  min-height: 30px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  cursor: pointer;
+  margin-left: auto;
+}
+.cv-drawer-pin:hover:not(:disabled) { background: #1f1f1f; color: #fff; }
+.cv-drawer-pin:disabled { color: var(--muted); cursor: not-allowed; }
+.cv-drawer-body { flex: 1; min-height: 0; }
+
+/* ---- semantic zoom: what each node draws at a given zoom (thresholds in lod.ts) ---- */
+.cv-dot { display: none; flex: none; width: calc(8px * var(--cs, 1)); height: calc(8px * var(--cs, 1)); border-radius: 50%; background: var(--st); }
+.cv-title { font-size: calc(15px * min(var(--cs, 1), 2.6)); }
+.cv-label { font-size: calc(11.5px * var(--cs, 1)); }
+
+.cv-pane-compact {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(6px * var(--cs, 1));
+  padding: calc(10px * var(--cs, 1)) calc(14px * var(--cs, 1));
+  overflow: hidden;
+  background: #000;
+  border-radius: 0 0 11px 11px;
+  cursor: grab;
+}
+.cv-pane-compact-name { font-size: calc(16px * var(--cs, 1)); font-weight: 600; color: #f2f2f2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cv-pane-compact-line {
+  font-family: var(--font-mono);
+  font-size: calc(15px * var(--cs, 1));
+  line-height: 1.35;
+  color: #cfcfcf;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+}
+
+/* mid zoom: less chrome */
+.cv-root.lod-mid .cv-pane-sub,
+.cv-root.lod-mid .cv-portlabel { display: none; }
+
+/* far out: titles + status only */
+.cv-root.lod-compact .cv-dot { display: block; }
+.cv-root.lod-compact .cv-icon,
+.cv-root.lod-compact .cv-subtitle,
+.cv-root.lod-compact .cv-caption,
+.cv-root.lod-compact .cv-portlabel,
+.cv-root.lod-compact .cv-diamond,
+.cv-root.lod-compact .cv-badges,
+.cv-root.lod-compact .cv-label,
+.cv-root.lod-compact .cv-sublabel,
+.cv-root.lod-compact .cv-plus,
+.cv-root.lod-compact .cv-stub,
+.cv-root.lod-compact .cv-circle > span:not(.cv-out-sub),
+.cv-root.lod-compact .cv-pane-sub { display: none; }
+.cv-root.lod-compact .cv-title { -webkit-line-clamp: 1; }
+.cv-root.lod-compact .cv-card { gap: calc(8px * min(var(--cs, 1), 2.6)); }
+
+@media (prefers-reduced-motion: reduce) {
+  .cv-drawer,
+  .cv-drawer.is-closing { animation: none; }
+  .cv-stub.is-wired,
+  .cv-plus.is-wired { transition: none; }
+}

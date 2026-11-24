@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "border-accent-on-rounded",
+        "value": "*",
+        "files": [
+          "web/src/canvas/canvas.css"
+        ],
+        "createdAt": "2026-11-24T01:55:36.893Z",
+        "reason": "main agent: L120 is a CSS border-triangle arrowhead (.cv-in::after) on the n8n-style input port, not an accent border on a card"
+      }
+    ]
+  }
+}

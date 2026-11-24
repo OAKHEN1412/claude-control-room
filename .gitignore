@@ -1,0 +1,21 @@
+node_modules/
+dist/
+*.key
+.env*
+*.log
+__pycache__/
+*.pyc
+spikes/stage2/
+spikes/s1-target/
+.dev.log
+spikes/stage4-data/
+*.db
+*.db-shm
+*.db-wal
+*.pid
+spikes/stage6-data/
+
+# impeccable design-hook cache (config.json is tracked)
+.impeccable/hook.cache.json
+.claude/
+docs/lemo-styles.json

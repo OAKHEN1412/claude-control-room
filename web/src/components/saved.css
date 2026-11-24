@@ -1,0 +1,51 @@
+/* "งานที่บันทึกไว้" widget (prefix sv-). Black/grey; amber/green/blue only for status. */
+.sv-root { display: flex; flex-direction: column; min-height: 0; flex: 1; position: relative; }
+.sv-count { margin-left: 4px; font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); }
+.sv-search { flex: none; padding: 8px 12px 0; display: flex; }
+.sv-list { flex: 1; min-height: 0; overflow: auto; padding: 6px 12px 8px; display: flex; flex-direction: column; gap: 4px; }
+.sv-empty { padding: 18px 4px; text-align: center; }
+.sv-dayhead { margin: 10px 0 4px; font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: 0.02em; }
+.sv-day ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.sv-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.sv-row.is-live { border-color: #3a3a3a; }
+.sv-main { flex: 1 1 200px; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.sv-title { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 13.5px; font-weight: 600; color: #f2f2f2; }
+.sv-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-live { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--done); box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2); }
+.sv-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-family: var(--font-mono); font-size: 11.5px; color: var(--text-2); }
+.sv-cwd { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-src { padding: 0 7px; border: 1px solid var(--line-2); border-radius: 9px; font-size: 11px; color: var(--text); }
+.sv-time { margin-left: auto; color: var(--muted); }
+.sv-acts { flex: none; display: flex; gap: 6px; }
+.sv-btn { min-height: 34px; padding: 0 12px; font-size: 12.5px; white-space: nowrap; }
+.sv-resume { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+.sv-f { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 120px; font-size: 12px; color: var(--muted); }
+.sv-f--s { flex: 0 1 96px; }
+.sv-f .cc-sel,
+.sv-f .cc-modefield { width: 100%; min-width: 0; }
+.sv-f .cc-modefield select { width: 100%; }
+.sv-resume-btns { flex: 1 1 100%; justify-content: flex-end; }
+.sv-more { align-self: center; margin: 8px 0 4px; }
+.sv-foot { flex: none; padding: 6px 12px 8px; border-top: 1px solid var(--line); }
+.sv-toast {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 38px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  color: var(--error);
+  background: #1a0f0d;
+  border: 1px solid #5a2a24;
+  border-radius: 8px;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.6);
+}

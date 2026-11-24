@@ -1,0 +1,2 @@
+{"type":"user","message":{"role":"user","content":"Example prompt that needs a choice"},"timestamp":"2026-01-01T10:00:00.000Z","origin":{"kind":"human"}}
+{"type":"assistant","message":{"model":"claude-opus-5-5","role":"assistant","stop_reason":"tool_use","content":[{"type":"tool_use","id":"q1","name":"AskUserQuestion","input":{"questions":[{"question":"Which sample option?","header":"Pick","options":[{"label":"A","description":"first"},{"label":"B","description":"second"}],"multiSelect":false}]}}]},"effort":"high","timestamp":"2026-01-01T10:00:30.000Z"}

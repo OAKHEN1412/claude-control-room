@@ -1,0 +1,6 @@
+:root {
+  --bg: #000000; --panel: #0A0A0A; --panel-2: #111111; --line: #262626; --line-2: #404040;
+  --text: #CFCFCF; --text-2: #B5B5B5; --muted: #8F8F8F; --dim: #858585; --panel-3: #1F1F1F; --on-accent: #1a1206;
+  --waiting: #f0a43a; --done: #22C55E; --running: #CFCFCF; --idle: #8F8F8F; --error: #ffb4a8; --claude: #d97757;
+  --font-ui: 'IBM Plex Sans Thai', system-ui, sans-serif; --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}

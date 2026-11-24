@@ -1,0 +1,227 @@
+/* Session pane. Class prefix cp-. The pane scrolls inside itself, never the page. */
+
+.cp-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--text);
+}
+
+.cp-head {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+
+.cp-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cp-label {
+  flex: none;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.cp-select {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+}
+
+.cp-select:focus-visible,
+.cp-btn:focus-visible,
+.cp-scroll:focus-visible {
+  outline: 2px solid #CFCFCF;
+  outline-offset: 2px;
+}
+
+.cp-path {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.cp-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+}
+
+.cp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+
+.cp-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.cp-model {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.cp-title {
+  flex: 1 1 120px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.cp-notice {
+  font-size: 12px;
+  color: var(--muted);
+  border: 1px dashed var(--line-2);
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+
+.cp-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cp-muted { font-size: 12px; color: var(--muted); }
+
+.cp-thought {
+  background: var(--bg);
+  border-left: 3px solid var(--line-2);
+  border-radius: 4px;
+  padding: 8px 12px;
+  overflow-wrap: anywhere;
+}
+
+.cp-agent {
+  background: var(--bg);
+  border: 1px solid var(--text);
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.cp-agent-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cp-agent-meta {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.cp-agent-title { font-weight: 600; overflow-wrap: anywhere; }
+
+.cp-agent-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.cp-agent-thought { color: var(--text-2); overflow-wrap: anywhere; }
+
+.cp-btn {
+  flex: none;
+  min-height: 32px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.cp-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cp-ev {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text);
+}
+
+.cp-time {
+  flex: none;
+  width: 64px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.cp-sym {
+  flex: none;
+  width: 12px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.cp-text { min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+
+.cp-ev-user .cp-text { color: var(--text); font-weight: 600; }
+.cp-ev-error,
+.cp-ev-error .cp-sym,
+.cp-ev-error .cp-text { color: var(--error); }
+
+.cp-empty-wrap { align-items: center; justify-content: center; }
+.cp-empty { color: var(--muted); text-align: center; margin: auto; }

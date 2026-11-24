@@ -1,0 +1,277 @@
+/* Network graph + Claude character. Class prefix cg-. */
+
+.cg-wrap {
+  container-type: size;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 320px;
+  min-width: 0;
+  display: block;
+  overflow-x: auto;
+  overflow-y: auto;
+  font-family: var(--font-ui);
+  color: var(--text);
+}
+
+/* Stage size is set inline in px by layoutGraph; node height is fixed, the wrap scrolls. */
+.cg-stage {
+  position: relative;
+  font-size: 13px;
+  flex: none;
+}
+
+.cg-edges {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.cg-edge {
+  fill: none;
+  stroke-width: 2px;
+}
+
+.cg-machine {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 4px;
+}
+
+.cg-char {
+  display: block;
+  width: min(100%, 92px);
+  height: auto;
+  overflow: visible;
+}
+
+.cg-skin { fill: var(--claude); }
+.cg-eye { fill: #141413; }
+
+.cg-machine-name {
+  max-width: 100%;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cg-mood {
+  max-width: 100%;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.25;
+}
+
+.cg-empty {
+  position: absolute;
+  left: 18%;
+  top: 45%;
+  width: 77%;
+  text-align: center;
+  color: var(--muted);
+}
+
+.cg-node {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+  margin: 0;
+  padding: 0 10px;
+  overflow: hidden;
+  text-align: left;
+  font: inherit;
+  line-height: 1.25;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: filter 0.18s ease, border-color 0.18s ease, background-color 0.18s ease;
+}
+
+.cg-subagent { background: var(--bg); }
+
+.cg-node:hover { filter: brightness(1.18); }
+
+.cg-node:focus-visible {
+  outline: 2px solid #CFCFCF;
+  outline-offset: 2px;
+}
+
+.cg-node[aria-pressed="true"] {
+  background: var(--panel-3);
+  border: 2px solid var(--text);
+  padding: 0 9px;
+}
+
+.cg-session[data-status="waiting"] { border-color: var(--waiting); }
+
+.cg-node[data-limit], .cg-node[data-limit][aria-pressed="true"] { border-color: var(--error); }
+.cg-limit { color: var(--error); font-weight: 600; }
+
+.cg-node[data-status="waiting"] {
+  animation: cg-wait-glow 2.4s ease-in-out infinite;
+}
+
+.cg-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  width: 100%;
+}
+
+.cg-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cg-badge {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.cg-tag {
+  flex: none;
+  padding: 0 5px;
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  color: var(--text);
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.cg-tag.is-rc { color: var(--text); border-color: var(--text-2); font-weight: 600; }
+.cg-tag.is-risk { color: var(--error); border-color: var(--error); }
+
+.cg-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.cg-sub-inline {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  font-weight: 400;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.cg-thought {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  font-size: 0.92em;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cg-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  background: transparent;
+  font-size: 12px;
+  color: var(--text-2);
+  border: 1px dashed var(--line-2);
+  border-radius: 8px;
+}
+
+.cg-live-dot { animation: cg-live 1.4s ease-in-out infinite; }
+
+/* Character motion. Each state changes the speed or which parts move. */
+.cg-char .cg-body {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: cg-breathe 4.2s ease-in-out infinite;
+}
+.cg-char[data-state="working"] .cg-body { animation: cg-bob 1s ease-in-out infinite; }
+.cg-char[data-state="asking"] .cg-body { animation: cg-bob 1.6s ease-in-out infinite; }
+.cg-char[data-state="done"] .cg-body { animation: cg-hop 0.7s ease-out 2; }
+.cg-char[data-state="error"] .cg-body { animation: cg-shake 0.3s linear 10; }
+
+.cg-char .cg-eye {
+  animation: cg-blink 4s linear infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.cg-char[data-state="idle"] .cg-eye { animation-duration: 6s; }
+
+.cg-char .cg-arm { transform-box: fill-box; transform-origin: right center; }
+.cg-char .cg-arm-r { transform-box: fill-box; transform-origin: left center; }
+/* working: both arms tap like typing, out of step */
+.cg-char[data-state="working"] .cg-arm { animation: cg-type 0.5s ease-in-out infinite; }
+.cg-char[data-state="working"] .cg-arm-r { animation: cg-type-r 0.5s ease-in-out infinite 0.25s; }
+/* asking: left arm waves high */
+.cg-char[data-state="asking"] .cg-arm { animation: cg-wave 0.8s ease-in-out infinite; }
+.cg-char[data-state="error"] .cg-head { stroke: var(--error); stroke-width: 3; }
+.cg-char[data-state="error"] .cg-skin { filter: saturate(0.85) hue-rotate(-8deg); }
+
+.cg-mark-done { fill: var(--done); }
+.cg-mark-error { fill: var(--error); }
+.cg-bubble-bg, .cg-bubble-tail { fill: var(--waiting); }
+.cg-bubble { animation: cg-pop 1.2s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 100%; }
+.cg-mark-ask { fill: #141413; font-family: var(--font-mono); font-size: 18px; font-weight: 700; }
+
+.cg-char-btn {
+  all: unset;
+  display: block;
+  width: min(100%, 92px);
+  cursor: pointer;
+  border-radius: 10px;
+}
+.cg-char-btn:focus-visible { outline: 2px solid var(--waiting); outline-offset: 4px; }
+.cg-char-btn:hover .cg-char { filter: brightness(1.12); }
+
+@keyframes cg-breathe { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(1.025); } }
+@keyframes cg-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+@keyframes cg-hop { 0%, 100% { transform: translateY(0); } 45% { transform: translateY(-12px); } }
+@keyframes cg-shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
+@keyframes cg-type { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(14deg); } }
+@keyframes cg-type-r { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-14deg); } }
+@keyframes cg-pop { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.12); } }
+@keyframes cg-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(0.1); } }
+@keyframes cg-wave { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-40deg); } }
+@keyframes cg-live { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+@keyframes cg-wait-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(240, 164, 58, 0); }
+  50% { box-shadow: 0 0 0 4px rgba(240, 164, 58, 0.22); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cg-char *,
+  .cg-node,
+  .cg-live-dot {
+    animation: none !important;
+  }
+  .cg-node { transition: none; }
+}

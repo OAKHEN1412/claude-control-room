@@ -1,0 +1,319 @@
+/* Work canvas (n8n style). Class prefix cv-. Full-screen layer behind the floating widgets. */
+
+.cv-root {
+  --cv-run: #5aa9ff;
+  --cv-ground: #000000;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background-color: var(--cv-ground);
+  background-image: radial-gradient(circle, #2e2e2e 1px, transparent 1.4px);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  font-family: var(--font-ui);
+  color: var(--text);
+}
+.cv-root.is-panning { cursor: grabbing; }
+
+.cv-world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  transform-origin: 0 0;
+}
+/* Promote the layer only while a pan / zoom gesture runs, so the text is re-rasterised crisp at the final scale. */
+.cv-root.is-moving .cv-world { will-change: transform; }
+
+.cv-edges {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+}
+.cv-edge { fill: none; stroke-width: 2.2px; stroke: #5c5c5c; }
+.cv-edge.is-dashed { stroke-dasharray: 5 5; stroke-width: 1.8px; stroke: #4a4a4a; }
+.cv-edge.is-run { stroke: var(--cv-run); stroke-dasharray: 8 6; animation: cv-flow 0.7s linear infinite; }
+.cv-edge.is-wait { stroke: var(--waiting); }
+@keyframes cv-flow { to { stroke-dashoffset: -14; } }
+
+/* ---- nodes ---- */
+.cv-node {
+  position: absolute;
+  outline: none;
+  cursor: pointer;
+  --st: var(--idle);
+}
+.cv-node[data-status="running"] { --st: var(--cv-run); }
+.cv-node[data-status="waiting"] { --st: var(--waiting); }
+.cv-node[data-status="done"] { --st: var(--done); }
+.cv-node[data-status="idle"] { --st: #5a5a5a; }
+.cv-node[data-status="unreadable"] { --st: var(--error); }
+.cv-node[data-limit] { --st: var(--error); }
+.cv-node[data-limit] > .cv-card { border-color: var(--error); }
+.cv-limit { color: var(--error); font-weight: 600; }
+.cv-node[data-kind="machine"] { cursor: grab; }
+
+.cv-card {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px 0 14px;
+  background: #1c1c1c;
+  border: 2px solid var(--st);
+  border-radius: 14px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
+  transition: box-shadow 0.15s ease;
+}
+.cv-node:hover > .cv-card { box-shadow: 0 6px 22px rgba(0, 0, 0, 0.7), 0 0 0 1px #404040; }
+.cv-node:focus-visible > .cv-card,
+.cv-node:focus-visible > .cv-shape,
+.cv-node:focus-visible > .cv-circle { outline: 2px solid #cfcfcf; outline-offset: 3px; }
+.cv-node.is-selected > .cv-card,
+.cv-node.is-selected > .cv-circle { box-shadow: 0 0 0 3px #000, 0 0 0 5px #e8e8e8; }
+.cv-node[data-status="waiting"] > .cv-card { animation: cv-wait 2.4s ease-in-out infinite; }
+@keyframes cv-wait {
+  0%, 100% { box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55), 0 0 0 0 rgba(240, 164, 58, 0); }
+  50% { box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55), 0 0 0 6px rgba(240, 164, 58, 0.2); }
+}
+
+.cv-icon { flex: none; display: flex; color: var(--st); }
+.cv-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cv-title {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: #f2f2f2;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+}
+.cv-subtitle {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ports */
+.cv-in,
+.cv-out {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: #000;
+  border: 2px solid #8a8a8a;
+  pointer-events: none;
+}
+.cv-in { left: -7px; display: flex; align-items: center; justify-content: center; }
+.cv-in::after { content: ''; border-left: 4px solid #8a8a8a; border-top: 3px solid transparent; border-bottom: 3px solid transparent; margin-left: 1px; }
+.cv-out { right: -7px; }
+.cv-diamond {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  margin-left: -5.5px;
+  transform: rotate(45deg);
+  background: #000;
+  border: 2px solid #8a8a8a;
+  pointer-events: none;
+}
+.cv-portlabel {
+  position: absolute;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* thought under the card */
+.cv-caption {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  padding: 2px 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #cfcfcf;
+  background: var(--cv-ground);
+  border-radius: 6px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+
+/* badges, top-right of a card */
+.cv-badges { position: absolute; top: -9px; right: 10px; display: flex; gap: 4px; pointer-events: none; }
+.cv-badge {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: #f2f2f2;
+  background: #000;
+  border: 1.5px solid #8a8a8a;
+  border-radius: 10px;
+}
+.cv-badge.is-ask { color: var(--on-accent); background: var(--waiting); border-color: var(--waiting); }
+.cv-badge.is-risk { color: var(--error); border-color: var(--error); }
+
+/* machine (trigger shape: big rounded left side) */
+.cv-shape {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #e8e8e8;
+  background: #1c1c1c;
+  border: 2px solid #8a8a8a;
+  border-radius: 42px 12px 12px 42px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
+}
+.cv-machine-char { position: absolute; left: 0; top: 0; width: 100%; height: 66px; display: flex; justify-content: center; }
+.cv-machine-char .cg-char,
+.cv-machine-char .cg-char-btn { width: 64px; }
+.cv-machine-name {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  top: 164px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv-mood { position: absolute; left: 0; width: 100%; top: 182px; text-align: center; font-size: 12px; font-weight: 600; line-height: 1.2; }
+
+/* round nodes: model, subagents, +N */
+.cv-circle {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 56px;
+  height: 56px;
+  margin-left: -28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #f2f2f2;
+  background: #1c1c1c;
+  border: 2.5px solid var(--st);
+  border-radius: 50%;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+.cv-node[data-kind="model"] { --st: #8a8a8a; }
+.cv-node[data-kind="model"] .cv-circle { border-color: #8a8a8a; }
+.cv-node[data-kind="more"] { --st: #6a6a6a; }
+.cv-node[data-kind="more"] .cv-circle { border-style: dashed; font-size: 13px; }
+.cv-node[data-kind="agent"][data-status="running"] .cv-circle { animation: cv-ring 1.6s ease-in-out infinite; }
+@keyframes cv-ring {
+  0%, 100% { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5), 0 0 0 0 rgba(90, 169, 255, 0); }
+  50% { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5), 0 0 0 5px rgba(90, 169, 255, 0.22); }
+}
+.cv-circle-icon { display: flex; color: var(--st); }
+.cv-label {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: 62px;
+  text-align: center;
+  font-size: 11.5px;
+  line-height: 1.25;
+  color: #e4e4e4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.cv-sublabel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 92px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cv-empty {
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  transform: translateX(-50%);
+  color: var(--muted);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* ---- chrome (not scaled): zoom controls bottom-left, widget dock top-left ---- */
+.cv-chrome { position: absolute; z-index: 5; cursor: default; display: flex; align-items: center; gap: 4px; padding: 4px; background: rgba(17, 17, 17, 0.92); border: 1px solid var(--line-2); border-radius: 10px; }
+.cv-zoom { left: 12px; bottom: 12px; }
+.cv-dock { left: 12px; top: 12px; flex-wrap: wrap; max-width: calc(100% - 24px); }
+.cv-dock-label { padding: 0 6px 0 8px; font-size: 12px; color: var(--muted); }
+.cv-btn {
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.cv-btn:hover { background: #1f1f1f; border-color: var(--line-2); }
+.cv-btn[aria-pressed="true"] { color: #fff; background: #262626; border-color: var(--line-2); }
+.cv-btn[aria-pressed="false"] { color: var(--muted); }
+.cv-btn:focus-visible { outline: 2px solid #cfcfcf; outline-offset: 1px; }
+.cv-zoomval { min-width: 44px; text-align: center; font-family: var(--font-mono); font-size: 12px; color: var(--text-2); }
+
+/* narrow screens: the canvas is a normal block above the stacked widgets */
+.cr-root.is-stacked .cv-root { position: relative; height: 520px; flex: none; }
+.cr-root.is-stacked .cv-root + .cr-w { margin-top: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cv-edge.is-run,
+  .cv-node[data-status="waiting"] > .cv-card,
+  .cv-node[data-kind="agent"][data-status="running"] .cv-circle { animation: none !important; }
+}

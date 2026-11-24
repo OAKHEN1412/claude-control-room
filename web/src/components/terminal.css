@@ -1,0 +1,99 @@
+/* Claude Code terminal look for the work pane and the full chat. Class prefix tl-. */
+
+.tl-log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: #cfcfcf;
+}
+
+.tl-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.tl-line.is-nested { padding-left: 16px; }
+.tl-mark { flex: none; width: 1.2em; text-align: center; color: #cfcfcf; }
+.tl-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.tl-time { flex: none; margin-left: auto; padding-left: 8px; font-size: 10.5px; color: var(--dim); }
+
+/* user prompt: > text, muted grey */
+.tl-user { margin-top: 8px; }
+.tl-user .tl-mark,
+.tl-user .tl-text { color: #9a9a9a; }
+
+/* tool call: ⏺ ToolName(args) */
+.tl-tool .tl-text { color: #ededed; font-weight: 500; }
+.tl-tool .tl-mark { color: var(--done); }
+.tl-assistant { margin-top: 4px; }
+
+/* result / error line: only this line is red-ish */
+.tl-limit .tl-mark, .tl-limit .tl-text { color: var(--error); font-weight: 600; }
+.tl-error .tl-mark { color: #8f8f8f; }
+.tl-error .tl-text { color: var(--error); }
+.tl-line.tl-error:not(.is-nested) .tl-mark { color: var(--error); }
+
+.tl-thought .tl-mark { color: var(--waiting); }
+.tl-thought .tl-text { color: #9a9a9a; font-style: italic; }
+
+.tl-expand {
+  all: unset;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  color: var(--error);
+}
+.tl-expand:hover { text-decoration: underline dotted; }
+.tl-expand:focus-visible { outline: 2px solid #cfcfcf; outline-offset: 2px; }
+.tl-empty { color: var(--muted); font-family: var(--font-mono); font-size: 12.5px; }
+
+/* the pane / full chat scroll areas become the terminal screen */
+.cp-scroll.is-term,
+.cf-body.is-term {
+  background: #000;
+  gap: 8px;
+}
+.cp-scroll.is-term { padding: 10px 12px 12px; }
+.cf-body.is-term .cf-col { max-width: 980px; }
+
+/* prompt box: > input */
+.cp-pane .cc-compose,
+.cf-overlay .cc-compose { background: #000; }
+.cp-pane .cc-row,
+.cf-overlay .cc-row { flex-wrap: nowrap; }
+.cp-pane .cc-row::before,
+.cf-overlay .cc-row::before {
+  content: '>';
+  flex: none;
+  width: 14px;
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 600;
+  color: #cfcfcf;
+}
+.cp-pane .cc-input,
+.cf-overlay .cc-input {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background: #000;
+  border-color: #404040;
+  border-radius: 6px;
+}
+.cp-pane .cc-input::placeholder,
+.cf-overlay .cc-input::placeholder { font-family: var(--font-ui); font-size: 12px; }
+.cp-pane .cc-input:focus-visible,
+.cf-overlay .cc-input:focus-visible { outline: none; border-color: #cfcfcf; }

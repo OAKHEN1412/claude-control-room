@@ -1,0 +1,4 @@
+{"type":"user","message":{"role":"user","content":"<system-reminder>ignore this wrapper</system-reminder>"},"timestamp":"2026-01-01T10:00:00.000Z","origin":{"kind":"human"}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"x1","content":"ok"}]},"timestamp":"2026-01-01T10:00:02.000Z"}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Example real prompt: rename the sample module"}]},"timestamp":"2026-01-01T10:00:10.000Z","origin":{"kind":"human"}}
+{"type":"user","message":{"role":"user","content":"Second prompt, should not be the title"},"timestamp":"2026-01-01T10:01:00.000Z","origin":{"kind":"human"}}

@@ -1,0 +1,43 @@
+/* Stage 4: "สรุปและบันทึกงาน" widget (prefix cs-). Black/grey, text #CFCFCF. */
+.cs-root { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.cs-tabs { flex: none; display: flex; gap: 6px; padding: 8px 12px 0; }
+.cs-tab {
+  min-height: 36px; padding: 0 12px; font: inherit; font-size: 13px; font-weight: 600; color: var(--text);
+  background: transparent; border: 1px solid var(--line-2); border-radius: 8px; cursor: pointer;
+}
+.cs-tab.is-on { background: var(--panel-3); border-color: var(--text-2); }
+.cs-body { flex: 1; min-height: 0; overflow: auto; padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 10px; }
+.cs-status { font-size: 13px; color: var(--text-2); }
+.cs-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.cs-chip {
+  min-height: 40px; padding: 0 12px; font: inherit; font-size: 13px; color: var(--text);
+  background: var(--bg); border: 1px solid var(--line-2); border-radius: 20px; cursor: pointer;
+}
+.cs-chip:disabled, .cs-input:disabled, .cs-send:disabled { color: var(--muted); border-color: var(--line); cursor: not-allowed; }
+.cs-qa { display: flex; flex-direction: column; gap: 10px; }
+.cs-pair { display: flex; flex-direction: column; gap: 4px; }
+.cs-q { align-self: flex-end; max-width: 92%; background: var(--line); border-radius: 8px; padding: 8px 12px; font-size: 13px; overflow-wrap: anywhere; }
+.cs-a { align-self: flex-start; max-width: 100%; background: var(--bg); border-radius: 8px; padding: 8px 12px; font-size: 13px; white-space: pre-line; overflow-wrap: anywhere; }
+.cs-a.is-error { color: var(--error); }
+.cs-via { align-self: flex-start; font-size: 12px; color: var(--muted); padding-left: 4px; }
+.cs-ask { display: flex; gap: 6px; margin-top: auto; }
+.cs-input {
+  flex: 1; min-width: 0; min-height: 40px; padding: 0 10px; font: inherit; font-size: 14px; color: var(--text);
+  background: var(--bg); border: 1px solid var(--line-2); border-radius: 8px;
+}
+.cs-input::placeholder { color: var(--muted); opacity: 1; }
+.cs-send {
+  min-height: 40px; padding: 0 14px; font: inherit; font-size: 14px; color: var(--text);
+  background: transparent; border: 1px solid var(--text); border-radius: 8px; cursor: pointer;
+}
+.cs-note { font-size: 12px; color: var(--muted); }
+.cs-empty { margin: auto; text-align: center; font-size: 13px; color: var(--muted); }
+.cs-card { background: var(--bg); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 4px; }
+.cs-card-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.cs-card-title { margin: 0; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.cs-card-time { flex: none; font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+.cs-result { font-size: 13px; color: var(--done); overflow-wrap: anywhere; }
+.cs-result.is-muted { color: var(--text-2); }
+.cs-bad { font-size: 12px; font-weight: 600; color: var(--error); }
+.cs-bullets { margin: 0; padding-left: 16px; font-size: 13px; color: var(--text-2); overflow-wrap: anywhere; }
+.cs-none { font-size: 12px; color: var(--muted); }

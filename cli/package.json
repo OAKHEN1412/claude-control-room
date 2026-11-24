@@ -1,0 +1,20 @@
+{
+  "name": "cr-cli",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "bin": { "cr": "src/cr.ts" },
+  "scripts": {
+    "test": "vitest run",
+    "build": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.12",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

@@ -1,0 +1,29 @@
+/* One shared scrollbar theme for the whole app (v1, v2, gallery, clip page): thin, rounded, theme greys.
+   Chrome / Safari / Edge use the ::-webkit-scrollbar rules (they allow a hover colour and an exact 6px);
+   Firefox ignores those and gets scrollbar-width / scrollbar-color. The standard properties are limited to Firefox
+   because Chrome 121+ would let them override the webkit rules and lose the hover state. */
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: #404040;
+  border-radius: 3px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #5a5a5a;
+}
+
+@supports (-moz-appearance: none) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #404040 transparent;
+  }
+}

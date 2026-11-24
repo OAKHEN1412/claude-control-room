@@ -1,0 +1,35 @@
+/* Top-bar usage rings: 5 h quota, weekly quota, context window. Colours reuse the app tokens. */
+.cr-header { position: relative; z-index: 50; }
+.cr-usage { position: relative; display: flex; align-items: center; gap: 4px 10px; flex: none; }
+.cr-ring { --ring: var(--text-2); position: static; }
+.cr-ring.is-warn { --ring: var(--waiting); }
+.cr-ring.is-crit { --ring: var(--error); }
+.cr-ring.is-none { --ring: var(--dim); }
+.cr-ring.is-dim .cr-ring-btn svg, .cr-ring.is-dim .cr-ring-label { opacity: 0.5; }
+.cr-ring-btn {
+  display: inline-flex; align-items: center; gap: 5px; padding: 2px 4px; min-height: 32px;
+  background: none; border: 1px solid transparent; border-radius: 16px; color: var(--text-2); font: inherit; cursor: default;
+}
+.cr-ring-btn:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+.cr-ring-track { fill: none; stroke: var(--line-2); stroke-width: 3; }
+.cr-ring-arc { fill: none; stroke: var(--ring); stroke-width: 3; stroke-linecap: round; }
+.cr-ring-num { fill: var(--text); font: 600 9px var(--font-mono); }
+.cr-ring-label { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.cr-ring-pop {
+  display: none; position: absolute; top: calc(100% + 6px); left: 0; z-index: 5000;
+  width: min(300px, calc(100vw - 32px)); padding: 10px 12px; box-sizing: border-box;
+  background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  font-size: 12px; color: var(--text-2);
+}
+.cr-ring.is-open .cr-ring-pop { display: block; }
+.cr-ring-pop b { display: block; margin-bottom: 4px; color: var(--text); font-size: 12px; }
+.cr-ring-big { font: 600 18px var(--font-mono); color: var(--ring); }
+.cr-ring-line { margin-top: 3px; color: var(--text-2); overflow-wrap: anywhere; }
+.cr-ring-list { list-style: none; margin: 8px 0 0; padding: 6px 0 0; border-top: 1px solid var(--line); display: grid; gap: 3px; }
+.cr-ring-list li { display: flex; justify-content: space-between; gap: 10px; }
+.cr-ring-list li.is-current { color: var(--text); }
+.cr-ring-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.cr-ring-pct { font-family: var(--font-mono); flex: none; }
+.cr-ring-pct.is-warn { color: var(--waiting); }
+.cr-ring-pct.is-crit { color: var(--error); }
+@media (max-width: 899px) { .cr-ring-label { display: none; } .cr-usage { gap: 2px 4px; } }

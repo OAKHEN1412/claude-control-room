@@ -1,0 +1,360 @@
+/* App shell, widget chrome and header. Colours come from tokens.css. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #000000;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+select,
+input {
+  font-family: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+/* Visible focus everywhere; inset for handles so card overflow:hidden does not clip it. */
+:focus-visible {
+  outline: 2px solid #cfcfcf;
+  outline-offset: 2px;
+}
+
+.cr-grip:focus-visible,
+.cr-size:focus-visible {
+  outline-offset: -2px;
+}
+
+.cr-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.cr-mono {
+  font-family: var(--font-mono);
+}
+
+.cr-muted {
+  color: var(--muted);
+}
+
+/* ---------- page shell ---------- */
+
+.cr-root {
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #000000;
+}
+
+.cr-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  flex: none;
+}
+
+.cr-brand {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.cr-brand h1 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.cr-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 3px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.cr-pill.is-live {
+  color: var(--text);
+  border-color: var(--done);
+}
+
+.cr-pill.is-stale {
+  color: var(--waiting);
+  border-color: var(--waiting);
+}
+
+.cr-pill.is-demo {
+  color: var(--text-2);
+}
+
+.cr-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+
+.cr-pill.is-live .cr-dot {
+  background: var(--done);
+}
+
+.cr-counts {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.cr-counts b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.cr-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.cr-sel {
+  min-height: 40px;
+  padding: 0 8px;
+  background: #000000;
+  color: var(--text);
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  font-size: 13px;
+  min-width: 0;
+}
+
+/* ---------- board and widgets ---------- */
+
+.cr-board {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.cr-w {
+  position: absolute;
+  padding: 5px;
+  box-sizing: border-box;
+}
+
+.cr-card {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  position: relative;
+}
+
+.cr-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 6px;
+  min-height: 40px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  flex: none;
+}
+
+.cr-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cr-grip {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+  border-radius: 6px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.cr-grip:active {
+  cursor: grabbing;
+}
+
+.cr-size {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 4px;
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.cr-grip:hover,
+.cr-size:hover {
+  color: var(--text);
+}
+
+.cr-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  position: relative;
+}
+
+.cr-placeholder {
+  margin: auto;
+  padding: 16px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.cr-placeholder__title {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.cr-placeholder__note {
+  margin: 0;
+  font-size: 13px;
+}
+
+/* ---------- stacked layout (narrow screens) ---------- */
+
+.cr-root.is-stacked {
+  height: auto;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: visible;
+}
+
+.cr-root.is-stacked .cr-board {
+  position: static;
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 16px 24px;
+}
+
+.cr-w--static {
+  position: static;
+  width: auto;
+  height: auto;
+  padding: 0;
+}
+
+.cr-root.is-stacked .cr-card {
+  height: auto;
+  min-height: 320px;
+}
+
+.cr-root.is-stacked .cr-w--graph .cr-card {
+  min-height: 520px;
+}
+
+.cr-root.is-stacked .cr-content {
+  overflow: visible;
+}
+
+.cr-root.is-stacked .cr-header {
+  padding: 12px 16px;
+}
+
+/* ---------- motion ---------- */
+
+@keyframes cr-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.cr-live {
+  animation: cr-pulse 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Placeholders must stay readable (>= 4.5:1) on every dark surface. */
+::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
