@@ -3,6 +3,8 @@ import type { RunnerState, SessionInfo, WorklogCard } from '../../../shared/prot
 import { CHIPS, TODAY_QUESTION, chipAnswer, statusLine, type ChipId } from '../../../shared/observer';
 import type { CommandResult } from '../commands';
 import { cardTime, cardView } from '../summaryView';
+import { useT } from '../i18n';
+import { serverText } from '../i18n/serverMsg';
 import './summary.css';
 
 export interface SummaryProps {
@@ -23,6 +25,7 @@ interface Bubble {
 }
 
 export function Summary({ sessions, runners, cards, ask, offlineReason }: SummaryProps) {
+  const t = useT();
   const [tab, setTab] = useState<Tab>('sum');
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
   const [text, setText] = useState('');
@@ -36,7 +39,7 @@ export function Summary({ sessions, runners, cards, ask, offlineReason }: Summar
     const r = await ask(q);
     setBusy(false);
     setBubbles((b) =>
-      b.map((x) => (x.id === id ? { ...x, a: r.ok && r.answer ? r.answer : (r.error ?? 'ไม่ได้คำตอบ'), error: !r.ok } : x)),
+      b.map((x) => (x.id === id ? { ...x, a: r.ok && r.answer ? r.answer : (serverText(r) || t('panels.summary.noAnswer')), error: !r.ok } : x)),
     );
   };
 
@@ -60,17 +63,17 @@ export function Summary({ sessions, runners, cards, ask, offlineReason }: Summar
 
   return (
     <div className="cs-root">
-      <div className="cs-tabs" role="tablist" aria-label="สรุปและบันทึกงาน">
+      <div className="cs-tabs" role="tablist" aria-label={t('panels.summary.tabsAria')}>
         <button type="button" role="tab" aria-selected={tab === 'sum'} className={`cs-tab${tab === 'sum' ? ' is-on' : ''}`} onClick={() => setTab('sum')}>
-          ผู้ช่วยสรุป
+          {t('panels.summary.tabAssistant')}
         </button>
         <button type="button" role="tab" aria-selected={tab === 'log'} className={`cs-tab${tab === 'log' ? ' is-on' : ''}`} onClick={() => setTab('log')}>
-          บันทึกงาน{cards.length > 0 ? ` (${cards.length})` : ''}
+          {t('panels.summary.tabLog')}{cards.length > 0 ? ` (${cards.length})` : ''}
         </button>
       </div>
 
       {tab === 'sum' ? (
-        <div className="cs-body" role="tabpanel" aria-label="ผู้ช่วยสรุป">
+        <div className="cs-body" role="tabpanel" aria-label={t('panels.summary.assistantAria')}>
           <div className="cs-status" role="status">
             {statusLine(sessions, runners)}
           </div>
@@ -82,7 +85,7 @@ export function Summary({ sessions, runners, cards, ask, offlineReason }: Summar
                 className="cs-chip"
                 disabled={busy || (c.model && !!offlineReason)}
                 onClick={() => onChip(c.id, c.label)}
-                title={c.model ? 'ใช้ Haiku' : 'ตอบจากสถานะที่เห็น ไม่เรียกโมเดล'}
+                title={c.model ? t('panels.summary.chipHaiku') : t('panels.summary.viaRule')}
               >
                 {c.label}
               </button>
@@ -92,30 +95,30 @@ export function Summary({ sessions, runners, cards, ask, offlineReason }: Summar
             {bubbles.map((m) => (
               <div key={m.id} className="cs-pair">
                 <div className="cs-q">{m.q}</div>
-                <div className={`cs-a${m.error ? ' is-error' : ''}`}>{m.a === null ? 'กำลังถาม Haiku…' : m.a}</div>
-                {m.a !== null && !m.error && <div className="cs-via">{m.via === 'haiku' ? 'ตอบโดย Haiku' : 'ตอบจากสถานะที่เห็น ไม่เรียกโมเดล'}</div>}
+                <div className={`cs-a${m.error ? ' is-error' : ''}`}>{m.a === null ? t('panels.summary.asking') : m.a}</div>
+                {m.a !== null && !m.error && <div className="cs-via">{m.via === 'haiku' ? t('panels.summary.viaHaiku') : t('panels.summary.viaRule')}</div>}
               </div>
             ))}
           </div>
           <form className="cs-ask" onSubmit={onSubmit}>
             <input
               className="cs-input"
-              aria-label="ถามผู้ช่วยสรุป"
-              placeholder="ถามเรื่องงานที่ทำอยู่"
+              aria-label={t('panels.summary.askAria')}
+              placeholder={t('panels.summary.askPlaceholder')}
               value={text}
               maxLength={500}
               onChange={(e) => setText(e.target.value)}
               disabled={!!offlineReason}
             />
             <button type="submit" className="cs-send" disabled={busy || !text.trim() || !!offlineReason}>
-              ถาม
+              {t('panels.summary.ask')}
             </button>
           </form>
-          <div className="cs-note">{offlineReason ?? 'ใช้ Haiku · ไม่แตะงาน — ถามเมื่อกดเท่านั้น'}</div>
+          <div className="cs-note">{offlineReason ?? t('panels.summary.note')}</div>
         </div>
       ) : (
-        <div className="cs-body" role="tabpanel" aria-label="บันทึกงาน">
-          {cards.length === 0 && <p className="cs-empty">ยังไม่มีงานที่จบวันนี้ — งานที่เงียบเกิน 2 นาทีหรือปิดแล้วจะขึ้นที่นี่เอง</p>}
+        <div className="cs-body" role="tabpanel" aria-label={t('panels.summary.logAria')}>
+          {cards.length === 0 && <p className="cs-empty">{t('panels.summary.logEmpty')}</p>}
           {cards.map((c) => {
             const v = cardView(c);
             return (
@@ -127,7 +130,7 @@ export function Summary({ sessions, runners, cards, ask, offlineReason }: Summar
                 <div className={v.resultTone === 'ok' ? 'cs-result' : 'cs-result is-muted'}>{v.resultText}</div>
                 {v.bullets.length > 0 ? (
                   <>
-                    <div className="cs-bad">ไม่เวิร์ก</div>
+                    <div className="cs-bad">{t('panels.summary.badHeading')}</div>
                     <ul className="cs-bullets">
                       {v.bullets.map((b, i) => (
                         <li key={i}>{b}</li>
@@ -135,7 +138,7 @@ export function Summary({ sessions, runners, cards, ask, offlineReason }: Summar
                     </ul>
                   </>
                 ) : (
-                  <div className="cs-none">ไม่มีรายการที่ไม่เวิร์ก</div>
+                  <div className="cs-none">{t('panels.summary.noFailures')}</div>
                 )}
               </article>
             );

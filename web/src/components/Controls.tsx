@@ -2,11 +2,9 @@
 // permission/question items, quick chips, send box, stop and "ย้ายมาคุมจากเว็บ".
 import { useCallback, useEffect, useState } from 'react';
 import {
-  BYPASS_CONFIRM_TEXT,
   EFFORT_LEVELS,
   MODEL_OPTIONS,
   PERMISSION_MODES,
-  PERMISSION_MODE_LABELS,
   QUICK_CHIPS,
   type PermissionMode,
   type EffortLevel,
@@ -16,24 +14,14 @@ import {
 } from '../../../shared/protocol';
 import type { CommandInput, CommandResult } from '../commands';
 import {
-  ADOPT_DISABLED,
-  ADOPT_HINT,
-  OPEN_TERMINAL_LABEL,
-  TAKEOVER_ARMED_LABEL,
-  TAKEOVER_LABEL,
-  TAKEOVER_TITLE,
-  takeoverGate,
-  OPEN_TERMINAL_TITLE,
   CLOSE_CONFIRM_MS,
+  adoptDisabledReason,
+  adoptHint,
   allAnswered,
   buildAnswers,
   canCloseJob,
   canOpenTerminal,
   closeClick,
-  queueStrip,
-  SEND_NOW_CONFIRM_LABEL,
-  SEND_NOW_LABEL,
-  SEND_NOW_TITLE,
   closeJobTitle,
   controlMode,
   disabledReason,
@@ -43,21 +31,35 @@ import {
   modeChoice,
   modeValue,
   modelValue,
+  openTerminalLabel,
+  openTerminalTitle,
+  queueStrip,
   runnerLine,
+  sendNowConfirmLabel,
+  sendNowLabel,
+  sendNowTitle,
+  takeoverArmedLabel,
+  takeoverGate,
+  takeoverLabel,
+  takeoverTitle,
   targetLabel,
   terminalHint,
   toggleChoice,
   type ControlMode,
 } from '../control';
-import { ATTACH_REMOTE_TITLE, canSubmit } from '../attach';
+import { useT, type TKey } from '../i18n';
+import { serverText } from '../i18n/serverMsg';
+import { attachRemoteTitle, canSubmit } from '../attach';
 import { AttachButton, AttachChips, DropOverlay } from './AttachBar';
 import { useAttachments } from './useAttachments';
 import './control.css';
+import { Composer } from './Composer';
 
 export type Command = (cmd: CommandInput) => Promise<CommandResult>;
 
 /** Runs commands one at a time per control group and keeps the last error for display. */
 export function useCommand(command: Command) {
+  const t = useT();
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
   const run = useCallback(
@@ -65,10 +67,10 @@ export function useCommand(command: Command) {
       setWorking(true);
       const r = await command(cmd);
       setWorking(false);
-      setError(r.ok ? null : (r.error ?? 'ทำไม่สำเร็จ ลองอีกครั้ง'));
+      setError(r.ok ? null : (serverText(r) || t('panels.controls.errorDefault')));
       return r;
     },
-    [command],
+    [command, t],
   );
   return { run, error, working, clearError: () => setError(null) };
 }
@@ -78,6 +80,13 @@ export interface ControlProps {
   runner: RunnerState | undefined;
   command: Command;
 }
+
+const PERMISSION_MODE_KEY: Record<PermissionMode, TKey> = {
+  default: 'panels.controls.modeDefault',
+  acceptEdits: 'panels.controls.modeAcceptEdits',
+  plan: 'panels.controls.modePlan',
+  bypassPermissions: 'panels.controls.modeBypass',
+};
 
 /**
  * "โหมด" select. `value` is the committed mode ('' = not controllable: shows a dash). Choosing bypassPermissions
@@ -98,6 +107,7 @@ export function PermissionModeField({
   title?: string;
   large?: boolean;
 }) {
+  const t = useT();
   const [asking, setAsking] = useState(false);
   const change = (raw: string) => {
     if (!isPermissionMode(raw)) return;
@@ -115,7 +125,7 @@ export function PermissionModeField({
     <div className="cc-modefield" title={title}>
       <select
         id={id}
-        aria-label="โหมดสิทธิ์ของงานนี้"
+        aria-label={t('panels.controls.modeAria')}
         className={`cc-sel${large ? ' is-large' : ''}`}
         value={value}
         disabled={disabled}
@@ -124,13 +134,13 @@ export function PermissionModeField({
         {value === '' && <option value="">—</option>}
         {PERMISSION_MODES.map((m) => (
           <option key={m} value={m}>
-            {PERMISSION_MODE_LABELS[m]}
+            {t(PERMISSION_MODE_KEY[m])}
           </option>
         ))}
       </select>
       {asking && (
-        <div className="cc-bypass" role="alertdialog" aria-label="ยืนยันโหมดไม่ถามเลย">
-          <span>{BYPASS_CONFIRM_TEXT}</span>
+        <div className="cc-bypass" role="alertdialog" aria-label={t('panels.controls.bypassConfirmAria')}>
+          <span>{t('panels.controls.bypassConfirm')}</span>
           <span className="cc-row">
             <button
               type="button"
@@ -140,10 +150,10 @@ export function PermissionModeField({
                 onCommit('bypassPermissions', true);
               }}
             >
-              ยืนยัน
+              {t('panels.controls.confirm')}
             </button>
             <button type="button" className="cc-btn" onClick={() => setAsking(false)}>
-              ยกเลิก
+              {t('panels.controls.cancel')}
             </button>
           </span>
         </div>
@@ -166,8 +176,9 @@ export function RemoteToggle({
   disabled?: boolean;
   title?: string;
 }) {
+  const t = useT();
   return (
-    <label className={`cc-rc${on ? ' is-on' : ''}${disabled ? ' is-disabled' : ''}`} title={title ?? 'Remote Control: คุมงานนี้ต่อจาก claude.ai / มือถือ'}>
+    <label className={`cc-rc${on ? ' is-on' : ''}${disabled ? ' is-disabled' : ''}`} title={title ?? t('panels.controls.rcTitle')}>
       <input id={id} type="checkbox" checked={on} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
       <span>RC</span>
     </label>
@@ -175,6 +186,7 @@ export function RemoteToggle({
 }
 
 export function ModelEffort({ session, runner, command, large }: ControlProps & { large?: boolean }) {
+  const t = useT();
   const mode = controlMode(session, runner);
   const reason = disabledReason(mode);
   const { run, error, working } = useCommand(command);
@@ -185,7 +197,7 @@ export function ModelEffort({ session, runner, command, large }: ControlProps & 
     <div className="cc-modeleffort">
       <div className="cc-selrow" title={reason ?? undefined}>
         <select
-          aria-label="โมเดลของงานนี้"
+          aria-label={t('panels.controls.modelAria')}
           className={cls}
           style={{ flex: 2 }}
           value={model}
@@ -200,7 +212,7 @@ export function ModelEffort({ session, runner, command, large }: ControlProps & 
           ))}
         </select>
         <select
-          aria-label="Effort ของงานนี้"
+          aria-label={t('panels.controls.effortAria')}
           className={cls}
           style={{ flex: 1 }}
           value={EFFORT_LEVELS.includes(effort as EffortLevel) ? effort : ''}
@@ -230,13 +242,13 @@ export function ModelEffort({ session, runner, command, large }: ControlProps & 
           on={runner?.alive === true && runner.remoteControl}
           disabled={mode !== 'runner' || working}
           onChange={(on) => void run({ type: 'set_remote_control', sessionId: session.sessionId, on })}
-          title={runner?.remoteUrl ? `Remote Control เปิดอยู่: ${runner.remoteUrl}` : undefined}
+          title={runner?.remoteUrl ? t('panels.controls.rcOnTitle', { url: runner.remoteUrl }) : undefined}
         />
       </div>
       {(runner || mode === 'readonly') && (
         <div className="cc-badge" role="status">
           {runner && (
-            <span className={runner.confirmed ? 'cc-ok' : 'cc-muted'}>{runner.confirmed ? 'ยืนยันจากตัวงานแล้ว' : 'รอยืนยันจากตัวงาน'}</span>
+            <span className={runner.confirmed ? 'cc-ok' : 'cc-muted'}>{runner.confirmed ? t('panels.controls.confirmedByJob') : t('panels.controls.waitingJob')}</span>
           )}
           {!runner && mode === 'readonly' && <span className="cc-muted">{reason}</span>}
         </div>
@@ -251,6 +263,7 @@ export function ModelEffort({ session, runner, command, large }: ControlProps & 
 }
 
 function PendingCard({ session, p, command }: { session: SessionInfo; p: PendingRequest; command: Command }) {
+  const t = useT();
   const { run, error, working } = useCommand(command);
   const [choices, setChoices] = useState<Record<string, string[] | string>>({});
   const [free, setFree] = useState('');
@@ -261,14 +274,14 @@ function PendingCard({ session, p, command }: { session: SessionInfo; p: Pending
     const qs = p.questions;
     const quick = isQuickAsk(p);
     return (
-      <section className="cc-pending is-ask" aria-label="Claude ถามคำถาม">
-        <div className="cc-pend-title">Claude ถาม · {targetLabel(session)}</div>
+      <section className="cc-pending is-ask" aria-label={t('panels.controls.askAria')}>
+        <div className="cc-pend-title">{t('panels.controls.askTitle', { target: targetLabel(session) })}</div>
         {qs.map((q) => {
           const cur = choices[q.question];
           return (
             <div key={q.question} className="cc-q">
               <div className="cc-q-text">{q.question}</div>
-              {q.multiSelect && <div className="cc-muted">เลือกได้หลายข้อ</div>}
+              {q.multiSelect && <div className="cc-muted">{t('panels.controls.multiHint')}</div>}
               <div className="cc-opts">
                 {q.options.map((o) => {
                   const on = Array.isArray(cur) ? cur.includes(o.label) : cur === o.label;
@@ -296,10 +309,10 @@ function PendingCard({ session, p, command }: { session: SessionInfo; p: Pending
         })}
         <div className="cc-row">
           <input
-            aria-label="พิมพ์ตอบเอง"
+            aria-label={t('panels.controls.freeAria')}
             className="cc-input"
             value={free}
-            placeholder="หรือพิมพ์ตอบเอง"
+            placeholder={t('panels.controls.freePlaceholder')}
             onChange={(e) => setFree(e.target.value)}
           />
           <button
@@ -312,10 +325,10 @@ function PendingCard({ session, p, command }: { session: SessionInfo; p: Pending
               answer('allow', buildAnswers(qs, merged));
             }}
           >
-            ตอบ
+            {t('panels.controls.answer')}
           </button>
           <button type="button" className="cc-btn" disabled={working} onClick={() => answer('deny')}>
-            ข้าม
+            {t('panels.controls.skip')}
           </button>
         </div>
         {error && <div className="cc-error">{error}</div>}
@@ -324,18 +337,18 @@ function PendingCard({ session, p, command }: { session: SessionInfo; p: Pending
   }
 
   return (
-    <section className="cc-pending" aria-label="ขออนุญาตใช้เครื่องมือ">
+    <section className="cc-pending" aria-label={t('panels.controls.toolAria')}>
       <div className="cc-pend-title">
-        ขออนุญาตใช้เครื่องมือ · <b className="cc-mono">{p.toolName}</b> · {targetLabel(session)}
+        {t('panels.controls.toolRequest')} · <b className="cc-mono">{p.toolName}</b> · {targetLabel(session)}
       </div>
       <div className="cc-pend-desc">{p.description}</div>
       <pre className="cc-pend-input">{p.inputPreview}</pre>
       <div className="cc-row">
         <button type="button" className="cc-btn is-accent" disabled={working} onClick={() => answer('allow')}>
-          อนุญาต
+          {t('panels.controls.allow')}
         </button>
         <button type="button" className="cc-btn" disabled={working} onClick={() => answer('deny')}>
-          ไม่อนุญาต
+          {t('panels.controls.deny')}
         </button>
       </div>
       {error && <div className="cc-error">{error}</div>}
@@ -356,6 +369,7 @@ export function PendingList({ session, runner, command }: ControlProps) {
 
 /** The rest of the send box for the canvas pane's rail: run line, adopt button and quick chips. */
 export function QuickPanel({ session, runner, command }: ControlProps) {
+  const t = useT();
   const mode: ControlMode = controlMode(session, runner);
   const reason = disabledReason(mode);
   const { run, error, working } = useCommand(command);
@@ -373,19 +387,19 @@ export function QuickPanel({ session, runner, command }: ControlProps) {
               type="button"
               className="cc-btn is-primary"
               disabled={mode !== 'adoptable' || working}
-              title={mode === 'adoptable' ? ADOPT_HINT : ADOPT_DISABLED}
+              title={mode === 'adoptable' ? adoptHint() : adoptDisabledReason()}
               onClick={() => void run({ type: 'adopt', sessionId: session.sessionId })}
             >
-              ย้ายมาคุมจากเว็บ
+              {t('panels.controls.moveToWeb')}
             </button>
           )}
-          <span className="cc-muted">{mode === 'adoptable' ? ADOPT_HINT : (terminalHint(mode, session.sessionId) ?? ADOPT_DISABLED)}</span>
+          <span className="cc-muted">{mode === 'adoptable' ? adoptHint() : (terminalHint(mode, session.sessionId) ?? adoptDisabledReason())}</span>
         </div>
       )}
       {can && (
         <div className="cc-adopt">
-          <button type="button" className="cc-btn" disabled={working} title={OPEN_TERMINAL_TITLE} onClick={() => void run({ type: 'open_terminal', sessionId: session.sessionId })}>
-            {OPEN_TERMINAL_LABEL}
+          <button type="button" className="cc-btn" disabled={working} title={openTerminalTitle()} onClick={() => void run({ type: 'open_terminal', sessionId: session.sessionId })}>
+            {openTerminalLabel()}
           </button>
         </div>
       )}
@@ -396,7 +410,7 @@ export function QuickPanel({ session, runner, command }: ControlProps) {
             type="button"
             className="cc-chip"
             disabled={!can || working}
-            title={can ? `ส่งถึง ${target}` : (reason ?? undefined)}
+            title={can ? t('panels.controls.targetTitle', { target }) : (reason ?? undefined)}
             onClick={() => void run({ type: 'send', sessionId: session.sessionId, text: c })}
           >
             {c}
@@ -404,7 +418,7 @@ export function QuickPanel({ session, runner, command }: ControlProps) {
         ))}
       </div>
       <div className="cc-target" title={session.cwd}>
-        ส่งถึง: <b>{target}</b>
+        {t('panels.controls.target')}: <b>{target}</b>
       </div>
       {error && (
         <div className="cc-error" role="alert">
@@ -417,6 +431,7 @@ export function QuickPanel({ session, runner, command }: ControlProps) {
 
 /** Stop and close (two-click confirm) as plain state, so the pane's rail can draw them as icon buttons. */
 export function useJobButtons({ session, runner, command }: ControlProps) {
+  const t = useT();
   const mode: ControlMode = controlMode(session, runner);
   const reason = disabledReason(mode);
   const { run, error, working } = useCommand(command);
@@ -431,17 +446,17 @@ export function useJobButtons({ session, runner, command }: ControlProps) {
       visible: mode === 'readonly',
       armed: takeover.armed,
       disabled: !gate.enabled || working,
-      title: takeover.armed ? TAKEOVER_ARMED_LABEL : gate.enabled ? `${TAKEOVER_LABEL} — ${TAKEOVER_TITLE}` : `${TAKEOVER_LABEL} — ${gate.title}`,
+      title: takeover.armed ? takeoverArmedLabel() : gate.enabled ? `${takeoverLabel()} — ${takeoverTitle()}` : `${takeoverLabel()} — ${gate.title}`,
       onClick: takeover.click,
     },
     terminal: {
       disabled: !canOpenTerminal(mode) || working,
-      title: canOpenTerminal(mode) ? OPEN_TERMINAL_TITLE : 'เปิดใน terminal ได้เฉพาะงานที่คุมจากเว็บ',
+      title: canOpenTerminal(mode) ? openTerminalTitle() : t('panels.controls.openTerminalWebOnly'),
       onClick: () => void run({ type: 'open_terminal', sessionId: session.sessionId }),
     },
     stop: {
       disabled: !can || !runner?.busy,
-      title: can ? 'หยุดงานที่กำลังทำอยู่' : (reason ?? 'หยุดไม่ได้'),
+      title: can ? t('panels.controls.stopTitle') : (reason ?? t('panels.controls.stopImpossible')),
       onClick: () => void run({ type: 'stop', sessionId: session.sessionId }),
     },
     close: {
@@ -455,6 +470,7 @@ export function useJobButtons({ session, runner, command }: ControlProps) {
 
 /** "ยึดมาคุม": two-click button for a live terminal session; the server closes that claude and adopts the session. */
 export function TakeoverButton({ session, mode, run, working }: { session: SessionInfo; mode: ControlMode; run: (cmd: CommandInput) => Promise<CommandResult>; working: boolean }) {
+  useT(); // labels below are read at render: subscribe to language changes
   const gate = takeoverGate(session, mode);
   const arm = useCloseArm(gate.enabled, () => void run({ type: 'takeover', sessionId: session.sessionId }));
   return (
@@ -462,10 +478,10 @@ export function TakeoverButton({ session, mode, run, working }: { session: Sessi
       type="button"
       className={`cc-btn is-primary${arm.armed ? ' is-danger' : ''}`}
       disabled={!gate.enabled || working}
-      title={arm.armed ? TAKEOVER_ARMED_LABEL : gate.title}
+      title={arm.armed ? takeoverArmedLabel() : gate.title}
       onClick={arm.click}
     >
-      {arm.armed ? TAKEOVER_ARMED_LABEL : TAKEOVER_LABEL}
+      {arm.armed ? takeoverArmedLabel() : takeoverLabel()}
     </button>
   );
 }
@@ -493,6 +509,7 @@ export function useCloseArm(canClose: boolean, onSend: () => void) {
 
 /** "ข้อความรอส่ง N" above the send box: what is waiting behind the running command, and a two-click "stop and send now". */
 function QueueStrip({ session, runner, run, working }: { session: SessionInfo; runner: RunnerState | undefined; run: (c: CommandInput) => Promise<CommandResult>; working: boolean }) {
+  const t = useT();
   const [now, setNow] = useState(() => Date.now());
   const [open, setOpen] = useState(false);
   const strip = queueStrip(session, runner, now);
@@ -510,21 +527,21 @@ function QueueStrip({ session, runner, run, working }: { session: SessionInfo; r
         <b>{strip.headline}</b>
         {strip.texts.length > 0 && (
           <button type="button" className="cc-link" aria-expanded={open} onClick={() => setOpen(!open)}>
-            {open ? 'ซ่อน' : 'ดูข้อความ'}
+            {open ? t('panels.controls.queueHide') : t('panels.controls.queueShow')}
           </button>
         )}
-        <button type="button" className={`cc-btn${armed ? ' is-danger' : ''}`} disabled={working} title={SEND_NOW_TITLE} onClick={click}>
-          {armed ? SEND_NOW_CONFIRM_LABEL : SEND_NOW_LABEL}
+        <button type="button" className={`cc-btn${armed ? ' is-danger' : ''}`} disabled={working} title={sendNowTitle()} onClick={click}>
+          {armed ? sendNowConfirmLabel() : sendNowLabel()}
         </button>
       </div>
-      {strip.running && <div className="cc-muted cc-queue-run">กำลังรันอยู่: {strip.running}</div>}
-      {armed && <div className="cc-muted cc-queue-warn">จะหยุดคำสั่งที่กำลังรัน แล้วส่งข้อความที่รออยู่รวมเป็นข้อความเดียว — กดอีกครั้งเพื่อยืนยัน</div>}
+      {strip.running && <div className="cc-muted cc-queue-run">{t('panels.controls.queueRunning', { running: strip.running })}</div>}
+      {armed && <div className="cc-muted cc-queue-warn">{t('panels.controls.queueWarn')}</div>}
       {open && strip.texts.length > 0 && (
         <ol className="cc-queue-list">
           {strip.texts.map((q, i) => (
             <li key={`${q.at}-${i}`}>
               {q.text}
-              {q.files && q.files.length > 0 ? <span className="cc-muted"> · แนบ {q.files.join(', ')}</span> : null}
+              {q.files && q.files.length > 0 ? <span className="cc-muted">{t('panels.controls.queueAttached', { files: q.files.join(', ') })}</span> : null}
             </li>
           ))}
         </ol>
@@ -538,6 +555,7 @@ function QueueStrip({ session, runner, run, working }: { session: SessionInfo; r
  * the canvas pane moves the rest into its side rail (QuickPanel, useJobButtons).
  */
 export function Compose({ session, runner, command, large, compact }: ControlProps & { large?: boolean; compact?: boolean }) {
+  const t = useT();
   const mode: ControlMode = controlMode(session, runner);
   const reason = disabledReason(mode);
   const { run, error, working } = useCommand(command);
@@ -547,7 +565,7 @@ export function Compose({ session, runner, command, large, compact }: ControlPro
   const can = mode === 'runner';
   // A job on another machine (machineId, set by the remote-machines branch) cannot read files saved on this PC.
   const remote = !!((session as { machineId?: string }).machineId || (runner as { machineId?: string } | undefined)?.machineId);
-  const att = useAttachments({ disabledReason: !can ? reason : remote ? ATTACH_REMOTE_TITLE : null });
+  const att = useAttachments({ disabledReason: !can ? reason : remote ? attachRemoteTitle() : null });
   const send = (text: string, withFiles = true) => {
     const files = withFiles ? att.ids : [];
     if (!can || att.uploading || (text.trim() === '' && files.length === 0)) return;
@@ -571,13 +589,13 @@ export function Compose({ session, runner, command, large, compact }: ControlPro
               type="button"
               className="cc-btn is-primary"
               disabled={mode !== 'adoptable' || working}
-              title={mode === 'adoptable' ? ADOPT_HINT : ADOPT_DISABLED}
+              title={mode === 'adoptable' ? adoptHint() : adoptDisabledReason()}
               onClick={() => void run({ type: 'adopt', sessionId: session.sessionId })}
             >
-              ย้ายมาคุมจากเว็บ
+              {t('panels.controls.moveToWeb')}
             </button>
           )}
-          <span className="cc-muted">{mode === 'adoptable' ? ADOPT_HINT : (terminalHint(mode, session.sessionId) ?? ADOPT_DISABLED)}</span>
+          <span className="cc-muted">{mode === 'adoptable' ? adoptHint() : (terminalHint(mode, session.sessionId) ?? adoptDisabledReason())}</span>
         </div>
       )}
       {compact && terminalHint(mode, session.sessionId) && (
@@ -588,7 +606,7 @@ export function Compose({ session, runner, command, large, compact }: ControlPro
       {!compact && (
         <div className="cc-chips">
           {QUICK_CHIPS.map((c) => (
-            <button key={c} type="button" className="cc-chip" disabled={!can || working} title={can ? `ส่งถึง ${target}` : (reason ?? undefined)} onClick={() => send(c, false)}>
+            <button key={c} type="button" className="cc-chip" disabled={!can || working} title={can ? t('panels.controls.targetTitle', { target }) : (reason ?? undefined)} onClick={() => send(c, false)}>
               {c}
             </button>
           ))}
@@ -597,22 +615,21 @@ export function Compose({ session, runner, command, large, compact }: ControlPro
       <QueueStrip session={session} runner={runner} run={run} working={working} />
       <AttachChips att={att} />
       <div className="cc-row">
-        <input
-          aria-label="สั่งงานเพิ่ม"
-          className={`cc-input${large ? ' is-large' : ''}`}
+        <Composer
+          aria-label={t('panels.controls.composeAria')}
+          large={large}
+          sessionId={session.sessionId}
           value={draft}
           disabled={!can}
           title={can ? undefined : (reason ?? undefined)}
-          placeholder={can ? 'สั่งงานเพิ่มได้ตลอด (ถ้ากำลังทำอยู่ จะเข้าคิว)' : 'สั่งไม่ได้ — session นี้เปิดจาก terminal'}
-          onChange={(e) => setDraft(e.target.value)}
+          placeholder={can ? t('panels.controls.composePlaceholder') : t('panels.controls.composeOffPlaceholder')}
+          onChange={setDraft}
           onPaste={att.onPaste}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.nativeEvent.isComposing) send(draft);
-          }}
+          onSubmit={() => send(draft)}
         />
         <AttachButton att={att} off={!can} />
         <button type="button" className="cc-btn is-primary" disabled={!can || working || !canSubmit(draft, att.chips)} onClick={() => send(draft)}>
-          ส่ง
+          {t('panels.controls.send')}
         </button>
         {!compact && (
           <>
@@ -620,14 +637,14 @@ export function Compose({ session, runner, command, large, compact }: ControlPro
               type="button"
               className="cc-btn"
               disabled={!can || !runner?.busy}
-              title={can ? 'หยุดงานที่กำลังทำอยู่' : (reason ?? undefined)}
+              title={can ? t('panels.controls.stopTitle') : (reason ?? undefined)}
               onClick={() => void run({ type: 'stop', sessionId: session.sessionId })}
             >
-              หยุด
+              {t('panels.controls.stop')}
             </button>
             {can && (
-              <button type="button" className="cc-btn" disabled={working} title={OPEN_TERMINAL_TITLE} onClick={() => void run({ type: 'open_terminal', sessionId: session.sessionId })}>
-                {OPEN_TERMINAL_LABEL}
+              <button type="button" className="cc-btn" disabled={working} title={openTerminalTitle()} onClick={() => void run({ type: 'open_terminal', sessionId: session.sessionId })}>
+                {openTerminalLabel()}
               </button>
             )}
             <button
@@ -637,14 +654,14 @@ export function Compose({ session, runner, command, large, compact }: ControlPro
               title={closeJobTitle(mode)}
               onClick={onClose}
             >
-              {closeArmed ? 'ยืนยันปิดงาน?' : 'ปิดงาน'}
+              {closeArmed ? t('panels.controls.closeConfirm') : t('panels.controls.closeJob')}
             </button>
           </>
         )}
       </div>
       {!compact && (
         <div className="cc-target" title={session.cwd}>
-          ส่งถึง: <b>{target}</b>
+          {t('panels.controls.target')}: <b>{target}</b>
         </div>
       )}
       {error && (

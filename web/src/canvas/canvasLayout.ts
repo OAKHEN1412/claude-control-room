@@ -8,6 +8,9 @@
 // Sessions are stacked top to bottom in columns of at most MAX_PER_COL; a session's round nodes sit in a grid under its card.
 // Stored node positions (see canvasStore.ts) override the automatic positions.
 
+import type { Status } from '../../../shared/protocol';
+import { t, type TKey } from '../i18n';
+
 export interface Point {
   x: number;
   y: number;
@@ -307,4 +310,17 @@ export function modelWord(model: string | null): string {
   const m = /^claude-([a-z]+)/i.exec(model.trim());
   const w = (m ? m[1] : model.trim().split(/[\s/:·-]+/)[0]) || '?';
   return w.toLowerCase().slice(0, 7);
+}
+
+const STATUS_KEY: Record<Status, TKey> = {
+  running: 'canvas.status.running',
+  waiting: 'canvas.status.waiting',
+  idle: 'canvas.status.idle',
+  done: 'canvas.status.done',
+  unreadable: 'canvas.status.unreadable',
+};
+
+/** Localised status word for a session or subagent. */
+export function statusWord(status: Status): string {
+  return t(STATUS_KEY[status]);
 }

@@ -1,7 +1,7 @@
 // Voice previews: ElevenLabs eleven_v3 text-to-speech, cached on disk.
 //
-//  - The API key comes from the secrets vault (`secrets get tools/elevenlabs.enc`) once at server start. It lives
-//    only in this process's memory: never logged, never written to disk, never sent to the browser.
+//  - The API key is handed in through `getKey` (the secret chain in secretChain.ts: env, then the DPAPI store,
+//    then the secrets vault CLI). It lives only in this process's memory: never logged, never sent to the browser.
 //  - Cache: ~/.claude-control-room/voice-cache/<sha256(voice + model + text)>.mp3. A repeat of the same
 //    voice + model + text is served from disk and costs no credits.
 //  - Calls are serialised (ElevenLabs answers 429 to parallel requests) and identical in-flight requests share one call.
@@ -9,7 +9,8 @@ import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { CLIP_VOICE_MODEL } from '../../shared/protocol';
+import { CLIP_VOICE_MODEL, type VarMap } from '../../shared/protocol';
+import { CodedError } from './codedError';
 import { dataDir, type LogFn } from './cmdlog';
 
 export const MAX_SAMPLE_CHARS = 120;
@@ -24,10 +25,12 @@ export interface VoiceEntry {
   builtin: boolean; // seeded entries cannot be removed
 }
 
+// Well-known ElevenLabs premade voices, seeded into every install.
 export const SEED_VOICES: readonly { id: string; name: string }[] = [
-  { id: 'KhBRXgEQjvfdIyXOu7G3', name: 'เสียงหลักที่คุณเลือก' },
-  { id: '2rg92Q2u0RWu8LiUcLQA', name: 'เสียงของ ai-glossary / FRL unit' },
-  { id: 'bIHbv24MWmeRgasZH58o', name: 'Will · เสียงของ Freshy Guide' },
+  { id: '21m00Tcm4TlvDq8ikWAM', name: 'Rachel' },
+  { id: 'pNInz6obpgDQGcFmaJgB', name: 'Adam' },
+  { id: 'ErXwobaYiN019PkySvjV', name: 'Antoni' },
+  { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Bella' },
 ];
 
 export const DEFAULT_SAMPLE = 'สวัสดีครับ วันนี้เรามาทำความรู้จักกับ FRL unit กัน';
@@ -79,7 +82,7 @@ export function readKeyFromVault(entry: string = VAULT_ENTRY, parse: (out: strin
   return attempt(0);
 }
 
-export class VoiceError extends Error {}
+export class VoiceError extends CodedError {}
 
 export interface PreviewResult {
   hash: string;
@@ -103,11 +106,13 @@ export interface VoiceServiceOptions {
 }
 
 /** Short reason for a failed ElevenLabs call (never includes the request headers or the key). */
-function httpReason(status: number): string {
-  if (status === 401 || status === 403) return 'ElevenLabs ปฏิเสธ key (สิทธิ์ไม่พอหรือหมดอายุ)';
-  if (status === 429) return 'ElevenLabs ตอบ 429 (เรียกถี่เกินหรือเครดิตหมด) รอสักครู่แล้วลองใหม่';
-  if (status === 400 || status === 404 || status === 422) return `ElevenLabs ปฏิเสธคำขอ (${status}): ตรวจ voice ID / ประโยค`;
-  return `ElevenLabs ผิดพลาด (${status})`;
+function httpReason(status: number): { text: string; code: string; vars?: VarMap } {
+  if (status === 401 || status === 403) return { text: 'ElevenLabs ปฏิเสธ key (สิทธิ์ไม่พอหรือหมดอายุ)', code: 'srv.voice.keyRejected' };
+  if (status === 429) return { text: 'ElevenLabs ตอบ 429 (เรียกถี่เกินหรือเครดิตหมด) รอสักครู่แล้วลองใหม่', code: 'srv.voice.rateLimited' };
+  if (status === 400 || status === 404 || status === 422) {
+    return { text: `ElevenLabs ปฏิเสธคำขอ (${status}): ตรวจ voice ID / ประโยค`, code: 'srv.voice.badRequest', vars: { status } };
+  }
+  return { text: `ElevenLabs ผิดพลาด (${status})`, code: 'srv.voice.httpError', vars: { status } };
 }
 
 export class VoiceService {
@@ -129,7 +134,7 @@ export class VoiceService {
   }
 
   add(id: string, name: string): void {
-    if (!isVoiceId(id)) throw new VoiceError('voice ID ไม่ถูกต้อง (ตัวอักษร/ตัวเลข 8-40 ตัว)');
+    if (!isVoiceId(id)) throw new VoiceError('voice ID ไม่ถูกต้อง (ตัวอักษร/ตัวเลข 8-40 ตัว)', 'srv.voice.idInvalid');
     const n = name.trim().slice(0, 60) || 'เสียงที่เพิ่มเอง';
     this.opts.store.addVoice(id, n);
   }
@@ -150,9 +155,11 @@ export class VoiceService {
   }
 
   preview(voiceId: string, rawText: string): Promise<PreviewResult> {
-    if (!isVoiceId(voiceId)) return Promise.reject(new VoiceError('voice ID ไม่ถูกต้อง'));
+    if (!isVoiceId(voiceId)) return Promise.reject(new VoiceError('voice ID ไม่ถูกต้อง', 'srv.voice.idInvalidShort'));
     const text = cleanSample(rawText);
-    if (text === null) return Promise.reject(new VoiceError(`ประโยคทดลองต้องมี 1-${MAX_SAMPLE_CHARS} ตัวอักษร`));
+    if (text === null) {
+      return Promise.reject(new VoiceError(`ประโยคทดลองต้องมี 1-${MAX_SAMPLE_CHARS} ตัวอักษร`, 'srv.voice.sampleLength', { max: MAX_SAMPLE_CHARS }));
+    }
     const hash = voiceCacheKey(voiceId, this.model, text);
     const file = cacheFile(this.cacheDir, hash);
     try {
@@ -183,7 +190,7 @@ export class VoiceService {
       // still missing
     }
     const key = await this.opts.getKey();
-    if (!key) throw new VoiceError('ยังไม่มี key ElevenLabs (secrets get tools/elevenlabs.enc อ่านไม่ได้ตอนเริ่ม server)');
+    if (!key) throw new VoiceError('ยังไม่ได้ตั้ง key ElevenLabs - ใส่ในหน้า Settings', 'srv.voice.noKey');
     const body: Record<string, unknown> = { text, model_id: this.model };
     if (/[฀-๿]/.test(text)) body.language_code = 'th';
     const f = this.opts.fetchFn ?? fetch;
@@ -198,14 +205,16 @@ export class VoiceService {
       });
     } catch (e) {
       this.opts.log?.({ cmd: 'voice_preview', voiceId, cached: false, ok: false, error: 'network' });
-      throw new VoiceError(`เรียก ElevenLabs ไม่ได้: ${e instanceof Error ? e.name : 'network error'}`);
+      const name = e instanceof Error ? e.name : 'network error';
+      throw new VoiceError(`เรียก ElevenLabs ไม่ได้: ${name}`, 'srv.voice.network', { name });
     }
     if (!res.ok) {
       this.opts.log?.({ cmd: 'voice_preview', voiceId, cached: false, ok: false, status: res.status });
-      throw new VoiceError(httpReason(res.status));
+      const r = httpReason(res.status);
+      throw new VoiceError(r.text, r.code, r.vars);
     }
     const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.length < 1000) throw new VoiceError('ElevenLabs ส่งเสียงกลับมาสั้นผิดปกติ');
+    if (buf.length < 1000) throw new VoiceError('ElevenLabs ส่งเสียงกลับมาสั้นผิดปกติ', 'srv.voice.shortAudio');
     fs.mkdirSync(this.cacheDir, { recursive: true });
     const tmp = `${file}.part`;
     fs.writeFileSync(tmp, buf);

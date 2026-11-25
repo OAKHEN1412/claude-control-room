@@ -1,7 +1,7 @@
 // Terminal as a second client: open-in-terminal availability, the hint for read-only terminal sessions, the command shape.
 import { describe, expect, it } from 'vitest';
 import type { SessionInfo } from '../../shared/protocol';
-import { TAKEOVER_BUSY_TITLE, TAKEOVER_TITLE, canOpenTerminal, shortId, takeoverGate, terminalHint } from './control';
+import { canOpenTerminal, shortId, takeoverBusyTitle, takeoverGate, takeoverTitle, terminalHint } from './control';
 import { createCommander } from './commands';
 import { withMachine } from './useServer';
 
@@ -29,9 +29,9 @@ describe('terminal as a second client', () => {
 
   it('take-over button state: only a live terminal session that is idle', () => {
     const idle = { status: 'idle' as const, subagents: [] };
-    expect(takeoverGate(idle, 'readonly')).toMatchObject({ enabled: true, title: TAKEOVER_TITLE });
+    expect(takeoverGate(idle, 'readonly')).toMatchObject({ enabled: true, title: takeoverTitle() });
     for (const status of ['running', 'waiting', 'unreadable'] as const) {
-      expect(takeoverGate({ ...idle, status }, 'readonly')).toEqual({ enabled: false, title: TAKEOVER_BUSY_TITLE });
+      expect(takeoverGate({ ...idle, status }, 'readonly')).toEqual({ enabled: false, title: takeoverBusyTitle() });
     }
     const ask = { id: 'x', kind: 'ask' as const, toolName: 'AskUserQuestion', label: '', detail: '', at: 1 };
     expect(takeoverGate({ ...idle, waitItems: [ask] }, 'readonly').enabled).toBe(false);

@@ -115,7 +115,7 @@ describe('failure extraction', () => {
     const st = feed(
       JSON.stringify({ type: 'user', timestamp: ts(0), message: { content: 'ใช้ key sk-ant-abcdefghijklmnopqrstuvwxyz0123 หน่อย' } }),
       toolUse('t1', 'Bash', { command: 'curl' }),
-      result('t1', 'Exit code 22\ncurl: (22) https://user:hunter2hunter@host.example/x failed', true),
+      result('t1', 'Exit code 22\ncurl: (22) https://user:hunter2hunter@example.com/x failed', true),
     );
     expect(st.failures[0].text).not.toContain('hunter2hunter');
     expect(st.failures[0].text).toContain('[secret]');
@@ -148,7 +148,7 @@ describe('stripSecrets', () => {
 
   it('removes a private key block and a password inside a URL', () => {
     expect(stripSecrets('-----BEGIN RSA PRIVATE KEY-----\nMIIabc\n-----END RSA PRIVATE KEY-----')).toBe('[secret]');
-    expect(stripSecrets('postgres://admin:s3cretpass@db.local:5432/x')).toBe('postgres://admin:[secret]@db.local:5432/x');
+    expect(stripSecrets('postgres://admin:s3cretpass@example.com:5432/x')).toBe('postgres://admin:[secret]@example.com:5432/x');
   });
 
   it('removes bearer tokens and NAME=value assignments with a secret-looking name', () => {

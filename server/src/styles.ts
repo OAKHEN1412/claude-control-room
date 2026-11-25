@@ -1,9 +1,11 @@
 // Style list for Clip Studio: our five existing workflows + the Lemo-Opuscar styles read from
-// docs/lemo-styles.json (written by the Lemo-Opuscar install step). The file is read on server start and on
-// "reload styles"; when it is missing or unreadable the Lemo section is "not installed".
+// lemo-styles.json (built by scripts/lemo-styles.mjs from the installed library). The file is read on server start
+// and on "reload styles"; when it is missing or unreadable the Lemo section is "not installed".
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { dataDir } from './cmdlog';
+import type { VarMap } from '../../shared/protocol';
 
 export interface LemoStyle {
   id: string;
@@ -19,12 +21,25 @@ export interface LemoList {
   styles: LemoStyle[];
   categories: string[]; // in first-seen order
   error?: string; // file exists but could not be used
+  code?: string; // srv.* code of `error`
+  vars?: VarMap; // values for the {name} placeholders of `code`
 }
 
+/**
+ * Where the style list is read from, first match wins:
+ *   1. CR_LEMO_FILE (when set),
+ *   2. <dataDir>/lemo-styles.json when it exists (the generator's output),
+ *   3. the legacy docs/lemo-styles.json next to the repo when it exists,
+ *   4. <dataDir>/lemo-styles.json (the future location; missing = "not installed").
+ */
 export function defaultLemoFile(): string {
   const o = process.env.CR_LEMO_FILE;
   if (o && o.trim() !== '') return o;
-  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'docs', 'lemo-styles.json');
+  const generated = path.join(dataDir(), 'lemo-styles.json');
+  if (fs.existsSync(generated)) return generated;
+  const legacy = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'docs', 'lemo-styles.json');
+  if (fs.existsSync(legacy)) return legacy;
+  return generated;
 }
 
 const SAFE_STYLE_ID = /^[A-Za-z0-9._-]{1,80}$/;
@@ -39,10 +54,13 @@ export function parseLemoStyles(text: string): LemoList {
   try {
     raw = JSON.parse(text);
   } catch (e) {
-    return { installed: false, styles: [], categories: [], error: `lemo-styles.json อ่านไม่ได้: ${e instanceof Error ? e.message : String(e)}` };
+    const msg = e instanceof Error ? e.message : String(e);
+    return { installed: false, styles: [], categories: [], error: `lemo-styles.json อ่านไม่ได้: ${msg}`, code: 'srv.styles.readFailed', vars: { msg } };
   }
   const rows = Array.isArray(raw) ? raw : raw && typeof raw === 'object' && Array.isArray((raw as { styles?: unknown }).styles) ? (raw as { styles: unknown[] }).styles : null;
-  if (!rows) return { installed: false, styles: [], categories: [], error: 'lemo-styles.json: ไม่ใช่รายการสไตล์' };
+  if (!rows) {
+    return { installed: false, styles: [], categories: [], error: 'lemo-styles.json: ไม่ใช่รายการสไตล์', code: 'srv.styles.notList' };
+  }
   const seen = new Set<string>();
   const styles: LemoStyle[] = [];
   for (const r of rows) {
@@ -98,10 +116,12 @@ export interface LemoStyleView {
   thumbUrl: string | null; // server route for a local file, or the remote URL
 }
 
-export function lemoView(list: LemoList): { installed: boolean; error?: string; categories: string[]; styles: LemoStyleView[] } {
+export function lemoView(list: LemoList): { installed: boolean; error?: string; code?: string; vars?: VarMap; categories: string[]; styles: LemoStyleView[] } {
   return {
     installed: list.installed,
     error: list.error,
+    ...(list.code ? { code: list.code } : {}),
+    ...(list.vars ? { vars: list.vars } : {}),
     categories: list.categories,
     styles: list.styles.map((s) => ({
       id: s.id,

@@ -1,15 +1,16 @@
 // "งานที่บันทึกไว้": filtering, grouping by day and the actions each row offers. Pure.
 import { DEFAULT_EFFORT, DEFAULT_MODEL, EFFORT_LEVELS, type EffortLevel } from '../../shared/protocol';
 import { modelOptionId } from './control';
+import { getLanguage, t } from './i18n';
 import type { SavedSession } from './protocolNext';
+import { monthAbbr } from './summaryView';
 
 export type SavedTab = 'all' | 'trash';
 
-export const SOURCE_WORD: Record<SavedSession['source'], string> = { terminal: 'terminal', web: 'เว็บ', clip: 'คลิป' };
-export const DELETE_NOTE = 'ลบ = เอาออกจากรายการ ไฟล์ยังอยู่';
-export const LIVE_RESUME_REASON = 'งานนี้ยังเปิดอยู่';
-
-const MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+/** Source label of a row: terminal / web / clip (Thai: เว็บ, คลิป). */
+export const sourceWord = (source: SavedSession['source']): string =>
+  t(source === 'terminal' ? 'panels.savedList.sourceTerminal' : source === 'web' ? 'panels.savedList.sourceWeb' : 'panels.savedList.sourceClip');
+export const liveResumeReason = (): string => t('panels.savedList.liveResume');
 
 const startOfDay = (ts: number): number => {
   const d = new Date(ts);
@@ -21,11 +22,13 @@ export function dayLabel(ts: number, now: number): string {
   const today = startOfDay(now);
   const day = startOfDay(ts);
   const diff = Math.round((today - day) / 86_400_000);
-  if (diff === 0) return 'วันนี้';
-  if (diff === 1) return 'เมื่อวาน';
+  if (diff === 0) return t('panels.savedList.today');
+  if (diff === 1) return t('panels.savedList.yesterday');
   const d = new Date(ts);
-  const base = `${d.getDate()} ${MONTHS[d.getMonth()]}`;
-  return d.getFullYear() === new Date(now).getFullYear() ? base : `${base} ${d.getFullYear() + 543}`;
+  const base = `${d.getDate()} ${monthAbbr(d.getMonth())}`;
+  if (d.getFullYear() === new Date(now).getFullYear()) return base;
+  // Thai UI shows the Buddhist-era year; English shows the Gregorian one.
+  return `${base} ${d.getFullYear() + (getLanguage() === 'th' ? 543 : 0)}`;
 }
 
 /** Clock time of the last activity, "14:05". */
@@ -42,7 +45,7 @@ export function filterSaved(list: readonly SavedSession[], tab: SavedTab, query:
     words.length === 0
       ? rows
       : rows.filter((s) => {
-          const hay = `${s.title} ${s.cwd} ${s.model ?? ''} ${s.effort ?? ''} ${SOURCE_WORD[s.source]} ${s.source}`.toLowerCase();
+          const hay = `${s.title} ${s.cwd} ${s.model ?? ''} ${s.effort ?? ''} ${sourceWord(s.source)} ${s.source}`.toLowerCase();
           return words.every((w) => hay.includes(w));
         });
   return [...matched].sort((a, b) => b.lastActivity - a.lastActivity);
@@ -81,16 +84,16 @@ export interface RowActions {
  * disabled only when no node for it is on the canvas. In the trash the only action is "กู้คืน".
  */
 export function rowActions(s: SavedSession, tab: SavedTab, onCanvas: (sessionId: string) => boolean): RowActions {
-  if (tab === 'trash') return { primary: 'restore', primaryLabel: 'กู้คืน', primaryDisabled: null, canDelete: false };
+  if (tab === 'trash') return { primary: 'restore', primaryLabel: t('panels.savedList.restore'), primaryDisabled: null, canDelete: false };
   if (s.live) {
     return {
       primary: 'goto',
-      primaryLabel: 'ไปที่บล็อก',
-      primaryDisabled: onCanvas(s.sessionId) ? null : 'ไม่พบบล็อกของงานนี้บน canvas',
+      primaryLabel: t('panels.savedList.goto'),
+      primaryDisabled: onCanvas(s.sessionId) ? null : t('panels.savedList.noBlock'),
       canDelete: true,
     };
   }
-  return { primary: 'resume', primaryLabel: 'เปิดทำงานต่อ', primaryDisabled: null, canDelete: true };
+  return { primary: 'resume', primaryLabel: t('panels.savedList.resume'), primaryDisabled: null, canDelete: true };
 }
 
 /** Starting values of the resume form, taken from the saved row (unknown model / effort fall back to the defaults). */

@@ -1,8 +1,11 @@
 // Chat attachments, pure parts: chip state reducer, what to accept, clipboard / drop file extraction,
 // pasted-image naming and the upload call. No React here (see components/useAttachments.ts).
 import { UPLOAD_MAX_BYTES, UPLOAD_MAX_FILES, formatSize, type UploadedFile } from '../../shared/uploads';
+import { t } from './i18n';
+import { serverText } from './i18n/serverMsg';
 
-export const ATTACH_REMOTE_TITLE = 'แนบไฟล์ได้เฉพาะงานบนเครื่องนี้';
+/** Tooltip on the attach button of a job that lives on another machine (attaching is local only). */
+export const attachRemoteTitle = (): string => t('shell.attach.remoteTitle');
 
 export interface Chip {
   key: string;
@@ -54,9 +57,9 @@ export function planAdd(existing: readonly Chip[], files: readonly { name: strin
   const problems: string[] = [];
   let count = existing.filter((c) => c.status !== 'error').length;
   files.forEach((f, i) => {
-    if (f.size > UPLOAD_MAX_BYTES) problems.push(`${f.name}: ไฟล์ใหญ่เกิน ${formatSize(UPLOAD_MAX_BYTES)}`);
-    else if (f.size === 0) problems.push(`${f.name}: ไฟล์ว่างเปล่า`);
-    else if (count >= UPLOAD_MAX_FILES) problems.push(`${f.name}: แนบได้ไม่เกิน ${UPLOAD_MAX_FILES} ไฟล์ต่อข้อความ`);
+    if (f.size > UPLOAD_MAX_BYTES) problems.push(t('shell.attach.tooLarge', { name: f.name, size: formatSize(UPLOAD_MAX_BYTES) }));
+    else if (f.size === 0) problems.push(t('shell.attach.empty', { name: f.name }));
+    else if (count >= UPLOAD_MAX_FILES) problems.push(t('shell.attach.tooMany', { name: f.name, max: UPLOAD_MAX_FILES }));
     else {
       accept.push(i);
       count += 1;
@@ -106,7 +109,7 @@ export function dragHasFiles(dt: TransferLike | null | undefined): boolean {
 
 type FetchFn = (url: string, init: { method: string; body: Blob; headers: Record<string, string> }) => Promise<{ ok: boolean; json(): Promise<unknown> }>;
 
-/** Uploads one file to POST /api/upload. Throws Error with a Thai message. */
+/** Uploads one file to POST /api/upload. Throws Error with a message in the current language. */
 export async function uploadFile(file: Blob & { name: string }, name: string, base: string, fetchFn: FetchFn = fetch as unknown as FetchFn): Promise<UploadedFile> {
   let res: Awaited<ReturnType<FetchFn>>;
   try {
@@ -116,14 +119,14 @@ export async function uploadFile(file: Blob & { name: string }, name: string, ba
       headers: { 'X-File-Name': encodeURIComponent(name), 'Content-Type': file.type || 'application/octet-stream' },
     });
   } catch {
-    throw new Error('อัปโหลดไม่สำเร็จ — เชื่อมต่อเซิร์ฟเวอร์ไม่ได้');
+    throw new Error(t('shell.attach.offline'));
   }
-  let body: { ok?: boolean; error?: string } & Partial<UploadedFile> = {};
+  let body: { ok?: boolean; error?: string; code?: string; vars?: Record<string, string | number> } & Partial<UploadedFile> = {};
   try {
     body = (await res.json()) as typeof body;
   } catch {
     // not JSON: handled below
   }
-  if (!res.ok || body.ok !== true || typeof body.id !== 'string') throw new Error(typeof body.error === 'string' ? body.error : 'อัปโหลดไม่สำเร็จ');
+  if (!res.ok || body.ok !== true || typeof body.id !== 'string') throw new Error(serverText(body) || t('shell.attach.uploadFailed'));
   return { id: body.id, name: body.name ?? name, mime: body.mime ?? file.type, size: body.size ?? file.size };
 }

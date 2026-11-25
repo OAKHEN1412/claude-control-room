@@ -1,7 +1,11 @@
 {
   "name": "claude-control-room",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OAKHEN1412/claude-control-room.git"
+  },
   "type": "module",
   "workspaces": [
     "server",
@@ -13,7 +17,8 @@
     "test": "npm run test -w server && npm run test -w web && npm run test -w cli",
     "build": "npm run build -w server && npm run build -w web && npm run build -w cli",
     "start": "npm run start:web -w server",
-    "start:agent": "npm run start:agent -w server"
+    "start:agent": "npm run start:agent -w server",
+    "doctor": "npm run doctor -w server"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"

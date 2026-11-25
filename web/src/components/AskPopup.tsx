@@ -5,6 +5,8 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from
 import type { CommandInput, CommandResult } from '../commands';
 import { allAnswered, buildAnswers, toggleChoice } from '../control';
 import { choosePlacement, optionLetter, recommendedIndex, type Box, type Placement, type QueueItem } from '../queue';
+import { useT } from '../i18n';
+import { serverText } from '../i18n/serverMsg';
 
 type Command = (cmd: CommandInput) => Promise<CommandResult>;
 
@@ -26,6 +28,7 @@ function toBox(r: DOMRect): Box {
 }
 
 export function AskPopup({ items, activeKey, open, focusToken, command, sessionLabel, onActive, onClose }: AskPopupProps) {
+  const t = useT();
   const ref = useRef<HTMLElement>(null);
   const keyRef = useRef<((e: KeyboardEvent) => void) | null>(null);
   const [placement, setPlacement] = useState<Placement>('corner');
@@ -100,21 +103,21 @@ export function AskPopup({ items, activeKey, open, focusToken, command, sessionL
     >
       <PopupBody key={item.key} keyRef={keyRef} item={item} command={command} target={sessionLabel(item.sessionId)} />
       <div className="ap-nav">
-        <span className="cr-mono ap-count" aria-label={`ข้อ ${idx + 1} จาก ${items.length}`}>
+        <span className="cr-mono ap-count" aria-label={t('panels.askPopup.itemOf', { i: idx + 1, n: items.length })}>
           {idx + 1}/{items.length}
         </span>
         {items.length > 1 && (
           <>
             <button type="button" className="cc-btn" onClick={() => go(-1)}>
-              ก่อนหน้า
+              {t('panels.askPopup.prev')}
             </button>
             <button type="button" className="cc-btn" onClick={() => go(1)}>
-              ถัดไป
+              {t('panels.askPopup.next')}
             </button>
           </>
         )}
         <button type="button" className="cc-btn ap-close" onClick={onClose}>
-          ปิดไว้ก่อน
+          {t('panels.askPopup.closeLater')}
         </button>
       </div>
     </section>
@@ -122,6 +125,7 @@ export function AskPopup({ items, activeKey, open, focusToken, command, sessionL
 }
 
 function PopupBody({ item, command, target, keyRef }: { item: QueueItem; command: Command; target: string; keyRef: { current: ((e: KeyboardEvent) => void) | null } }) {
+  const t = useT();
   const [choices, setChoices] = useState<Record<string, string[] | string>>({});
   const [free, setFree] = useState('');
   const [reason, setReason] = useState('');
@@ -134,11 +138,11 @@ function PopupBody({ item, command, target, keyRef }: { item: QueueItem; command
     setError(null);
     const r = await command({ type: 'answer', sessionId: item.sessionId, requestId: item.requestId, behavior, answers, message });
     setWorking(false);
-    if (!r.ok) setError(r.error ?? 'ส่งคำตอบไม่สำเร็จ');
+    if (!r.ok) setError(serverText(r) || t('panels.askPopup.sendFailed'));
   };
 
   const qs = item.questions;
-  const title = `${item.kind === 'ask' ? 'คำถามจาก' : 'ขออนุญาตจาก'} ${item.job}${item.model ? ` · ${item.model}` : ''}`;
+  const title = `${item.kind === 'ask' ? t('panels.askPopup.askFrom', { job: item.job }) : t('panels.askPopup.permFrom', { job: item.job })}${item.model ? ` · ${item.model}` : ''}`;
   const quick = item.kind === 'ask' && qs.length === 1 && !qs[0].multiSelect;
 
   const pick = (q: (typeof qs)[number], label: string) => {
@@ -149,8 +153,8 @@ function PopupBody({ item, command, target, keyRef }: { item: QueueItem; command
   // 1/2/3 pick an option of the first question while the popup (not a text field) has focus.
   const onKey = (e: KeyboardEvent) => {
     if (item.source !== 'runner' || item.kind !== 'ask' || qs.length === 0) return;
-    const t = e.target;
-    if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement) return;
+    const tgt = e.target;
+    if (tgt instanceof HTMLInputElement || tgt instanceof HTMLTextAreaElement) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const n = Number(e.key);
     if (!Number.isInteger(n) || n < 1) return;
@@ -185,7 +189,7 @@ function PopupBody({ item, command, target, keyRef }: { item: QueueItem; command
           </div>
         ))}
         {item.kind === 'permission' && item.detail && <pre className="cc-pend-input">{item.detail}</pre>}
-        <p className="ap-terminal">ตอบใน terminal ของงานนี้</p>
+        <p className="ap-terminal">{t('panels.askPopup.answerTerminal')}</p>
         <div className="cc-target">{target}</div>
       </div>
     );
@@ -207,7 +211,7 @@ function PopupBody({ item, command, target, keyRef }: { item: QueueItem; command
               <p id={qi === 0 ? 'ap-text' : undefined} className="ap-text">
                 {q.question}
               </p>
-              {q.multiSelect && <div className="cc-muted">เลือกได้หลายข้อ</div>}
+              {q.multiSelect && <div className="cc-muted">{t('panels.askPopup.multi')}</div>}
               {q.options.map((o, i) => {
                 const on = Array.isArray(cur) ? cur.includes(o.label) : cur === o.label;
                 return (
@@ -232,10 +236,10 @@ function PopupBody({ item, command, target, keyRef }: { item: QueueItem; command
         })}
         <div className="ap-free">
           <input
-            aria-label="พิมพ์ตอบเอง"
+            aria-label={t('panels.askPopup.freeAria')}
             className="cr-sel"
             value={free}
-            placeholder="หรือพิมพ์ตอบเอง"
+            placeholder={t('panels.askPopup.freePlaceholder')}
             onChange={(e) => setFree(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && free.trim() !== '' && qs.length === 1) void send('allow', buildAnswers(qs, { [qs[0].question]: free.trim() }));
@@ -251,7 +255,7 @@ function PopupBody({ item, command, target, keyRef }: { item: QueueItem; command
               void send('allow', buildAnswers(qs, merged));
             }}
           >
-            ตอบ
+            {t('panels.askPopup.answer')}
           </button>
         </div>
         {error && (
@@ -274,18 +278,18 @@ function PopupBody({ item, command, target, keyRef }: { item: QueueItem; command
       </p>
       {item.detail && <pre className="cc-pend-input">{item.detail}</pre>}
       <input
-        aria-label="เหตุผลถ้าไม่อนุญาต (ไม่บังคับ)"
+        aria-label={t('panels.askPopup.reason')}
         className="cr-sel"
         value={reason}
-        placeholder="เหตุผลถ้าไม่อนุญาต (ไม่บังคับ)"
+        placeholder={t('panels.askPopup.reason')}
         onChange={(e) => setReason(e.target.value)}
       />
       <div className="ap-row">
         <button type="button" className="ap-opt is-rec" disabled={working} onClick={() => void send('allow')}>
-          อนุญาต
+          {t('panels.askPopup.allow')}
         </button>
         <button type="button" className="ap-opt" disabled={working} onClick={() => void send('deny', undefined, reason.trim() || undefined)}>
-          ไม่อนุญาต
+          {t('panels.askPopup.deny')}
         </button>
       </div>
       {error && (

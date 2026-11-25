@@ -1,9 +1,11 @@
 {
   "name": "cr-cli",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
-  "bin": { "cr": "src/cr.ts" },
+  "bin": {
+    "cr": "src/cr.ts"
+  },
   "scripts": {
     "test": "vitest run",
     "build": "tsc --noEmit -p tsconfig.json"

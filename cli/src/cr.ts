@@ -10,6 +10,7 @@ import { CrClient } from './client.ts';
 import type { State } from './client.ts';
 import { formatList, listRows, makePaint } from './format.ts';
 import type { Paint } from './format.ts';
+import { runUpdateCommand } from './update.ts';
 
 /** Server error text -> a Thai explanation (the raw text is kept after it). */
 export function explain(error: string | undefined): string {
@@ -61,6 +62,7 @@ export async function main(argv: string[]): Promise<number> {
     console.log(USAGE);
     return 0;
   }
+  if (command.kind === 'update') return runUpdateCommand(command); // no server needed: the updater restarts it
   const client = new CrClient(port);
   try {
     await client.connect();
@@ -82,6 +84,8 @@ async function run(command: Exclude<Command, { kind: 'help' }>, client: CrClient
   const st = client.state;
   const extra = machine ? { machineId: machine } : {}; // hook for the remote-machines feature; ignored by servers without it
   switch (command.kind) {
+    case 'update':
+      return runUpdateCommand(command);
     case 'ls': {
       const rows = listRows([...st.sessions.values()], [...st.runners.values()], command.all);
       for (const l of formatList(rows, paint, process.stdout.columns ?? 100)) console.log(l);

@@ -3,6 +3,7 @@ import { Canvas, type CanvasProps } from '../canvas/Canvas';
 import { FLOAT_IDS2, coverRightPct, type FloatId2, type Rect, type StoredLayout2 } from '../layoutV2';
 import { snapRectToMonitor } from '../canvas/seams';
 import { Widget } from './Widget';
+import { useT } from '../i18n';
 
 export interface BoardV2Props {
   layout: StoredLayout2;
@@ -20,18 +21,19 @@ export interface BoardV2Props {
 
 /** UI v2: the canvas fills the board (work panes are nodes on it); summary and clip float over it and can be hidden / shown from the dock. */
 export function BoardV2({ layout, titles, panes, stacked, onRect, onCommit, onHidden, canvas, seams = [], windowWidth = 0 }: BoardV2Props) {
+  const t = useT();
   const [top, setTop] = useState<FloatId2>('summary');
 
   const dock = (
     <>
-      <span className="cv-dock-label">ช่องบนหน้าจอ</span>
+      <span className="cv-dock-label">{t('shell.board.dockLabel')}</span>
       {FLOAT_IDS2.map((id) => (
         <button
           key={id}
           type="button"
           className="cv-btn"
           aria-pressed={!layout.hidden[id]}
-          title={layout.hidden[id] ? `แสดง ${titles[id]}` : `ซ่อน ${titles[id]}`}
+          title={layout.hidden[id] ? t('shell.board.show', { title: titles[id] }) : t('shell.board.hide', { title: titles[id] })}
           onClick={() => {
             onHidden(id, !layout.hidden[id]);
             if (layout.hidden[id]) setTop(id);

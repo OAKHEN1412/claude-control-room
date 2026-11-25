@@ -5,9 +5,22 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { ClipJob } from '../../shared/protocol';
-import { fileId, GalleryService, galleryKey, type FoundFile, type OpenFolder, parseRange, type RunFfprobe, scanRoots } from '../src/gallery';
+import { defaultGalleryRoots, fileId, GalleryService, galleryKey, type FoundFile, type OpenFolder, parseRange, type RunFfprobe, scanRoots } from '../src/gallery';
 import type { OurStyle } from '../src/ourStyles';
 import type { RunFfmpeg } from '../src/stills';
+
+it('the default gallery root is only ~/videos (CR_GALLERY_ROOTS still overrides it)', () => {
+  const saved = process.env.CR_GALLERY_ROOTS;
+  delete process.env.CR_GALLERY_ROOTS;
+  try {
+    expect(defaultGalleryRoots()).toEqual([path.join(os.homedir(), 'videos')]);
+    process.env.CR_GALLERY_ROOTS = 'D:/a' + path.delimiter + 'E:/b';
+    expect(defaultGalleryRoots()).toEqual(['D:/a', 'E:/b']);
+  } finally {
+    if (saved === undefined) delete process.env.CR_GALLERY_ROOTS;
+    else process.env.CR_GALLERY_ROOTS = saved;
+  }
+});
 
 // ---- helpers -------------------------------------------------------------------------------
 

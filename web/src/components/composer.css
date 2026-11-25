@@ -1,0 +1,32 @@
+/* Composer: auto-growing textarea that looks like the old single-line .cc-input, plus the "/" menu. */
+textarea.cc-composer {
+  box-sizing: border-box; display: block; resize: none; overflow-y: hidden;
+  min-height: 40px; padding: 9px 10px; line-height: 1.4; font: inherit; font-size: 14px;
+}
+textarea.cc-composer.is-large { min-height: 48px; padding: 13px 10px; font-size: 15px; }
+.cc-compose .cc-row { align-items: flex-end; }
+.cp-pane .cc-row::before,
+.cf-overlay .cc-row::before { align-self: flex-start; padding-top: 9px; }
+/* Panes are narrow: the textarea gets its own full-width line, the buttons wrap under it (right-aligned). */
+.cp-pane .cc-compose .cc-row,
+.cf-overlay .cc-compose .cc-row { flex-wrap: wrap; justify-content: flex-end; }
+.cp-pane .cc-compose .cc-row > textarea.cc-composer,
+.cf-overlay .cc-compose .cc-row > textarea.cc-composer { flex: 1 1 calc(100% - 24px); }
+
+.cc-slash {
+  position: fixed; z-index: 200000; box-sizing: border-box; max-width: calc(100vw - 16px); max-height: 312px; overflow-y: auto;
+  padding: 4px; background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6); font-family: var(--font-ui);
+}
+.cc-slash-row {
+  display: flex; align-items: baseline; gap: 8px; min-height: 24px; padding: 4px 8px; border-radius: 6px; cursor: pointer;
+  font-size: 13px; color: var(--text);
+}
+.cc-slash-row.is-active { background: var(--panel-3); }
+.cc-slash-name { flex: none; font-family: var(--font-mono); font-size: 12.5px; color: var(--text); }
+.cc-slash-hint { flex: none; font-family: var(--font-mono); font-size: 12px; color: var(--dim); }
+.cc-slash-desc { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--muted); }
+.cc-slash-badge {
+  flex: none; padding: 0 6px; font-size: 11px; line-height: 16px; color: var(--muted); border: 1px solid var(--line-2); border-radius: 8px;
+}
+.cc-slash-badge.is-builtin { color: var(--waiting); border-color: var(--waiting); }

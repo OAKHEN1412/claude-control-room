@@ -20,7 +20,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 describe('sanitizeFileName', () => {
   it('drops folders, control characters and forbidden characters, keeps Thai', () => {
-    expect(sanitizeFileName('C:\\Users\\x\\..\\secret.txt')).toBe('secret.txt');
+    expect(sanitizeFileName('C:\\Users\\you\\..\\secret.txt')).toBe('secret.txt');
     expect(sanitizeFileName('../../etc/passwd')).toBe('passwd');
     expect(sanitizeFileName('a<b>c:d"e|f?g*h.png')).toBe('a_b_c_d_e_f_g_h.png');
     expect(sanitizeFileName('line\nbreak\u0000.txt')).toBe('line_break_.txt');
@@ -44,7 +44,7 @@ describe('sanitizeFileName', () => {
 
 describe('attachment display', () => {
   it('shows the name without the uuid prefix', () => {
-    const p = 'C:\\Users\\x\\uploads\\2026-11-24\\3f2b8c1a-1111-4222-8333-444444444444-shot.png';
+    const p = 'C:\\Users\\you\\uploads\\2026-11-24\\3f2b8c1a-1111-4222-8333-444444444444-shot.png';
     expect(attachDisplayName(p)).toBe('shot.png');
     expect(showAttachments(`ดูรูปนี้\n[ไฟล์แนบ] ${p}`)).toBe('ดูรูปนี้\n📎 shot.png');
     expect(showAttachments('plain')).toBe('plain');
@@ -254,7 +254,8 @@ class FakeChild extends EventEmitter implements ChildLike {
       this.buf += d.toString();
       let i: number;
       while ((i = this.buf.indexOf('\n')) >= 0) {
-        this.written.push(JSON.parse(this.buf.slice(0, i)));
+        const w = JSON.parse(this.buf.slice(0, i));
+        if (!(w.type === 'control_request' && w.request?.subtype === 'initialize')) this.written.push(w);
         this.buf = this.buf.slice(i + 1);
       }
     });
@@ -311,7 +312,7 @@ describe('parser never leaks attachment bytes', () => {
     return { st, d: derive(st, { now: Date.parse('2026-11-24T10:00:05.000Z'), processAlive: true, mtime: Date.parse('2026-11-24T10:00:00.000Z') } as never) };
   };
   it('shows 📎 names in the timeline and the title, never base64 or the folder path', () => {
-    const p = 'C:\\Users\\x\\.claude-control-room\\uploads\\2026-11-24\\3f2b8c1a-1111-4222-8333-444444444444-shot.png';
+    const p = 'C:\\Users\\you\\.claude-control-room\\uploads\\2026-11-24\\3f2b8c1a-1111-4222-8333-444444444444-shot.png';
     const { d } = run([line([{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: B64 } }, { type: 'text', text: `สีอะไร\n[ไฟล์แนบ] ${p}` }])]);
     const user = d.timeline.filter((e) => e.kind === 'user');
     expect(user).toHaveLength(1);

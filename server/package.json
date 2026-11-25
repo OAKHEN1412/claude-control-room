@@ -1,7 +1,7 @@
 {
   "name": "cr-server",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
@@ -9,7 +9,8 @@
     "test": "vitest run",
     "build": "tsc --noEmit -p tsconfig.json",
     "start:web": "tsx src/index.ts --serve-web",
-    "start:agent": "tsx src/index.ts --agent"
+    "start:agent": "tsx src/index.ts --agent",
+    "doctor": "tsx src/doctor.ts --cli"
   },
   "dependencies": {
     "ws": "^8.18.0"

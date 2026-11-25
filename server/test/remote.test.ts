@@ -64,7 +64,7 @@ class FakeChild extends EventEmitter implements TunnelChild {
   }
 }
 
-const T1: RemoteTarget = { id: 'm1', name: 'server', host: '100.64.0.10', user: 'user', keyPath: '', agent: true };
+const T1: RemoteTarget = { id: 'm1', name: 'server', host: '192.0.2.10', user: 'user', keyPath: '', agent: true };
 
 interface Rig {
   hub: RemoteHub;
@@ -120,10 +120,10 @@ const snapshot = (sessions: SessionInfo[], runners: RunnerState[] = [], extra: R
 
 describe('tunnel + token plumbing', () => {
   it('builds the ssh tunnel as an argument array, loopback on both ends, key from the machine', () => {
-    const a = buildTunnelArgs({ host: '100.64.0.10', user: 'user', keyPath: '/k/pc-remote-agent' }, 41234);
+    const a = buildTunnelArgs({ host: '192.0.2.10', user: 'user', keyPath: '/k/pc-remote-agent' }, 41234);
     expect(a).toEqual([
       '-N', '-o', 'BatchMode=yes', '-o', 'ExitOnForwardFailure=yes', '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3', '-o', 'ConnectTimeout=10', '-o', 'IdentitiesOnly=yes', '-o', 'StrictHostKeyChecking=accept-new',
-      '-i', '/k/pc-remote-agent', '-L', `127.0.0.1:41234:127.0.0.1:${AGENT_PORT}`, 'user@100.64.0.10',
+      '-i', '/k/pc-remote-agent', '-L', `127.0.0.1:41234:127.0.0.1:${AGENT_PORT}`, 'user@192.0.2.10',
     ]);
   });
 
@@ -153,7 +153,7 @@ describe('RemoteHub connection', () => {
     expect(r.spawns[0].file).toBe('ssh');
     expect(r.spawns[0].args).toContain(keyFile);
     expect(r.spawns[0].args).toContain('-L');
-    expect(r.spawns[0].args).toContain('user@100.64.0.10');
+    expect(r.spawns[0].args).toContain('user@192.0.2.10');
     expect(r.sockets[0].url).toBe('ws://127.0.0.1:40001');
     expect(r.sockets[0].headers).toEqual({ [AGENT_TOKEN_HEADER]: 'sekret-token' });
     expect(r.hub.status('m1')?.state).toBe('connecting'); // online only after the first snapshot
@@ -517,11 +517,11 @@ describe('routeTarget and machine commands', () => {
 
 describe('agent mode', () => {
   it('refuses to bind anything but loopback', async () => {
-    for (const h of ['0.0.0.0', '::', '', '100.64.0.10', '192.168.1.5', 'example.com']) expect(() => assertLoopbackHost(h), h).toThrow('loopback');
+    for (const h of ['0.0.0.0', '::', '', '192.0.2.10', '192.168.1.5', 'example.com']) expect(() => assertLoopbackHost(h), h).toThrow('loopback');
     for (const h of ['127.0.0.1', 'localhost', '::1']) expect(() => assertLoopbackHost(h)).not.toThrow();
     const watcher = new Watcher({ claudeDir: path.join(tmp, 'c'), pollMs: 50 });
     await expect(startServer({ watcher, port: 0, host: '0.0.0.0', log: () => {} })).rejects.toThrow('loopback');
-    await expect(startServer({ watcher, port: 0, host: '100.64.0.10', log: () => {} })).rejects.toThrow('loopback');
+    await expect(startServer({ watcher, port: 0, host: '192.0.2.10', log: () => {} })).rejects.toThrow('loopback');
     watcher.stop();
   });
 

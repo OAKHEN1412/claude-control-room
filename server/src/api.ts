@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import type http from 'node:http';
 import { CLIP_VOICE_MODEL } from '../../shared/protocol';
+import { codeOf } from './codedError';
 import { OUR_STYLES } from './ourStyles';
 import { ensureStill, type RunFfmpeg } from './stills';
 import { lemoThumbFile, lemoView, loadLemoStyles, type LemoList } from './styles';
@@ -69,7 +70,7 @@ export class ClipApi {
       req.on('data', (c: Buffer) => {
         n += c.length;
         if (n > 8 * 1024) {
-          reject(new VoiceError('คำขอใหญ่เกินไป'));
+          reject(new VoiceError('คำขอใหญ่เกินไป', 'srv.api.bodyTooLarge'));
           req.destroy();
           return;
         }
@@ -79,7 +80,7 @@ export class ClipApi {
         try {
           resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'));
         } catch {
-          reject(new VoiceError('JSON ไม่ถูกต้อง'));
+          reject(new VoiceError('JSON ไม่ถูกต้อง', 'srv.api.badJson'));
         }
       });
       req.on('error', reject);
@@ -104,7 +105,7 @@ export class ClipApi {
     }
     void this.route(req, res, url, cors).catch((e) => {
       const msg = e instanceof Error ? e.message : String(e);
-      this.json(res, e instanceof VoiceError ? 400 : 500, { ok: false, error: e instanceof VoiceError ? msg : 'server error' }, cors);
+      this.json(res, e instanceof VoiceError ? 400 : 500, { ok: false, error: e instanceof VoiceError ? msg : 'server error', ...(e instanceof VoiceError ? codeOf(e) : {}) }, cors);
     });
     return true;
   }
@@ -151,7 +152,7 @@ export class ClipApi {
     }
     const voice = this.deps.voice;
     if (!voice) {
-      this.json(res, 503, { ok: false, error: 'ระบบเสียงยังไม่เปิดใช้' }, cors);
+      this.json(res, 503, { ok: false, error: 'ระบบเสียงยังไม่เปิดใช้', code: 'srv.voice.disabled' }, cors);
       return;
     }
     if (m === 'POST' && p === '/api/voices') {

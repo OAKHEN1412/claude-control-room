@@ -50,19 +50,32 @@ export function toMs(t: unknown): number | null {
   return t < 1e12 ? Math.round(t * 1000) : Math.round(t);
 }
 
-/** "อีก 2 ชม. 15 นาที" / "อีก 12 นาที" / "รีเซ็ตแล้ว"; null when the reset time is unknown. */
-export function formatCountdown(resetsAt: number | null, now: number): string | null {
+/** A UI string with a stable code: `text` is the Thai fallback; `code`/`vars` look up the translation. */
+export interface CodedText { text: string; code: string; vars?: Record<string, number> }
+
+/** Reset countdown with its code (see formatCountdown for the text); null when the reset time is unknown. */
+export function countdownMsg(resetsAt: number | null, now: number): CodedText | null {
   if (resetsAt === null) return null;
   const diff = Math.floor((resetsAt - now) / 60_000);
-  if (diff <= 0) return 'รีเซ็ตแล้ว';
+  if (diff <= 0) return { text: 'รีเซ็ตแล้ว', code: 'srv.usage.resetDone' };
   const d = Math.floor(diff / 1440);
   const h = Math.floor((diff % 1440) / 60);
   const m = diff % 60;
-  const parts: string[] = [];
-  if (d > 0) parts.push(`${d} วัน`);
-  if (h > 0) parts.push(`${h} ชม.`);
-  if (m > 0 && d === 0) parts.push(`${m} นาที`);
-  return `อีก ${parts.join(' ')}`;
+  // d>0 shows days and hours; d=0 shows hours and minutes (minutes only when > 0)
+  if (d > 0) {
+    if (h > 0) return { text: `อีก ${d} วัน ${h} ชม.`, code: 'srv.usage.resetInDH', vars: { d, h } };
+    return { text: `อีก ${d} วัน`, code: 'srv.usage.resetInD', vars: { d } };
+  }
+  if (h > 0) {
+    if (m > 0) return { text: `อีก ${h} ชม. ${m} นาที`, code: 'srv.usage.resetInHM', vars: { h, m } };
+    return { text: `อีก ${h} ชม.`, code: 'srv.usage.resetInH', vars: { h } };
+  }
+  return { text: `อีก ${m} นาที`, code: 'srv.usage.resetInM', vars: { m } };
+}
+
+/** "อีก 2 ชม. 15 นาที" / "อีก 12 นาที" / "รีเซ็ตแล้ว"; null when the reset time is unknown. */
+export function formatCountdown(resetsAt: number | null, now: number): string | null {
+  return countdownMsg(resetsAt, now)?.text ?? null;
 }
 
 /** 319_000 -> "319k", 1_000_000 -> "1.0m", 850 -> "850". */
@@ -74,13 +87,19 @@ export function formatTokens(n: number): string {
 
 /** "5 นาทีที่แล้ว" style age for the "อัปเดตล่าสุด" line. */
 export function formatAge(updatedAt: number, now: number): string {
+  return ageMsg(updatedAt, now).text;
+}
+
+/** formatAge with its code (srv.usage.ageSec / ageMin / ageHour / ageDay, all take {n}). */
+export function ageMsg(updatedAt: number, now: number): CodedText {
   const s = Math.max(0, Math.floor((now - updatedAt) / 1000));
-  if (s < 60) return `${s} วินาทีที่แล้ว`;
+  if (s < 60) return { text: `${s} วินาทีที่แล้ว`, code: 'srv.usage.ageSec', vars: { n: s } };
   const m = Math.floor(s / 60);
-  if (m < 60) return `${m} นาทีที่แล้ว`;
+  if (m < 60) return { text: `${m} นาทีที่แล้ว`, code: 'srv.usage.ageMin', vars: { n: m } };
   const h = Math.floor(m / 60);
-  if (h < 48) return `${h} ชม. ที่แล้ว`;
-  return `${Math.floor(h / 24)} วันที่แล้ว`;
+  if (h < 48) return { text: `${h} ชม. ที่แล้ว`, code: 'srv.usage.ageHour', vars: { n: h } };
+  const days = Math.floor(h / 24);
+  return { text: `${days} วันที่แล้ว`, code: 'srv.usage.ageDay', vars: { n: days } };
 }
 
 /**

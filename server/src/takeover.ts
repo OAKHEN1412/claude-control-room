@@ -5,7 +5,7 @@
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { PermissionMode, SessionInfo } from '../../shared/protocol';
+import type { PermissionMode, SessionInfo, VarMap } from '../../shared/protocol';
 import { sessionsDir as defaultSessionsDir } from './paths';
 import { CommandError } from './runner';
 
@@ -15,6 +15,18 @@ export const TAKEOVER_POLL_MS = 200;
 export const TAKEOVER_IMAGE = 'claude.exe';
 export const TAKEOVER_MODE: PermissionMode = 'bypassPermissions';
 export const BUSY_ERROR = 'งานนี้กำลังทำงานอยู่ รอให้ว่างก่อน';
+/** Stable code per refusal reason (the Thai text stays the fallback). */
+const TAKEOVER_CODES: Record<string, string> = {
+  platform: 'srv.takeover.platform',
+  'runner-job': 'srv.takeover.runnerJob',
+  clip: 'srv.takeover.clip',
+  unknown: 'srv.takeover.unknown',
+  'no-live-pid': 'srv.takeover.noLivePid',
+  'ambiguous-pid': 'srv.takeover.ambiguousPid',
+  kind: 'srv.takeover.kind',
+  image: 'srv.takeover.image',
+  busy: 'srv.takeover.busy',
+};
 
 const SESSION_FILE_RE = /^(\d+)\.json$/; // never the <pid>.<hash>.key files
 
@@ -119,9 +131,9 @@ export async function takeover(sessionId: string, d: TakeoverDeps): Promise<numb
   const sleep = d.sleep ?? ((ms) => new Promise<void>((r) => setTimeout(r, ms)));
   const imageName = d.imageName ?? defaultImageName;
   const kill = d.kill ?? defaultKill;
-  const refuse = (reason: string, thai: string, extra: Record<string, unknown> = {}): never => {
+  const refuse = (reason: string, thai: string, extra: Record<string, unknown> = {}, vars?: VarMap): never => {
     log({ cmd: 'takeover', stage: 'refused', sessionId, reason, ...extra });
-    throw new CommandError(thai);
+    throw new CommandError(thai, TAKEOVER_CODES[reason], vars);
   };
 
   if ((d.platform ?? process.platform) !== 'win32') refuse('platform', 'ยึดมาคุมใช้ได้เฉพาะบน Windows');
@@ -139,7 +151,9 @@ export async function takeover(sessionId: string, d: TakeoverDeps): Promise<numb
   if (file.kind !== 'interactive') refuse('kind', 'ไม่ใช่ session แบบ terminal (interactive)', { pid: file.pid, kind: file.kind });
 
   const image = await imageName(file.pid).catch(() => null);
-  if (!image || image.toLowerCase() !== TAKEOVER_IMAGE) refuse('image', `process ${file.pid} ไม่ใช่ ${TAKEOVER_IMAGE} — ไม่ปิดให้`, { pid: file.pid, image });
+  if (!image || image.toLowerCase() !== TAKEOVER_IMAGE) {
+    refuse('image', `process ${file.pid} ไม่ใช่ ${TAKEOVER_IMAGE} — ไม่ปิดให้`, { pid: file.pid, image }, { pid: file.pid, image: TAKEOVER_IMAGE });
+  }
 
   // Idle only. The status in the file is Claude's own word; the rest is what the transcript shows.
   const fileBusy = file.status !== '' && file.status !== 'idle';
@@ -156,14 +170,14 @@ export async function takeover(sessionId: string, d: TakeoverDeps): Promise<numb
   } catch (e) {
     if (d.pidAlive(file.pid)) {
       log({ cmd: 'takeover', stage: 'failed', sessionId, pid: file.pid, error: `kill: ${e instanceof Error ? e.message : String(e)}` });
-      throw new CommandError('ปิด claude ใน terminal ไม่สำเร็จ');
+      throw new CommandError('ปิด claude ใน terminal ไม่สำเร็จ', 'srv.takeover.killFailed');
     }
   }
   const deadline = now() + (d.exitWaitMs ?? TAKEOVER_EXIT_WAIT_MS);
   while (d.pidAlive(file.pid)) {
     if (now() >= deadline) {
       log({ cmd: 'takeover', stage: 'failed', sessionId, pid: file.pid, error: 'pid still alive after wait' });
-      throw new CommandError('สั่งปิด claude แล้วแต่ process ยังไม่หายใน 10 วินาที');
+      throw new CommandError('สั่งปิด claude แล้วแต่ process ยังไม่หายใน 10 วินาที', 'srv.takeover.stillAlive');
     }
     await sleep(d.pollMs ?? TAKEOVER_POLL_MS);
   }
@@ -172,7 +186,7 @@ export async function takeover(sessionId: string, d: TakeoverDeps): Promise<numb
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     log({ cmd: 'takeover', stage: 'failed', sessionId, pid: file.pid, error: `adopt: ${msg}` });
-    throw new CommandError(`ปิด claude ใน terminal แล้ว แต่เปิดต่อไม่สำเร็จ: ${msg} — ข้อมูลงานยังอยู่ กด "เปิดทำงานต่อ" ได้`);
+    throw new CommandError(`ปิด claude ใน terminal แล้ว แต่เปิดต่อไม่สำเร็จ: ${msg} — ข้อมูลงานยังอยู่ กด "เปิดทำงานต่อ" ได้`, 'srv.takeover.adoptFailed', { msg });
   }
   log({ cmd: 'takeover', stage: 'done', sessionId, pid: file.pid, ok: true });
   return file.pid;

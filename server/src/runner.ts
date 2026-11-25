@@ -27,12 +27,16 @@ import {
   type PermissionMode,
   type RunnerState,
   type LimitInfo,
+  type SlashCommand,
   LIMIT_TEXT_RE,
+  DEFAULT_EFFORT,
 } from '../../shared/protocol';
 
 import { buildUserContent, type UserContent } from './attachments';
+import { CodedError } from './codedError';
 import { parseQuestions } from './questions';
 import { stripSecrets } from './secrets';
+import { trimCommands } from './slashCommands';
 import { toolLabel } from './toolLabels';
 import type { StoredUpload } from './uploads';
 
@@ -42,7 +46,7 @@ export function labelDetail(label: string): string {
   return k >= 0 ? label.slice(k + 2) : '';
 }
 
-export class CommandError extends Error {}
+export class CommandError extends CodedError {}
 
 /** A finished turn of a Runner job (its stream `result` event). */
 export interface TurnEnd {
@@ -271,6 +275,20 @@ export class RunnerSession extends EventEmitter {
         reject(e instanceof Error ? e : new Error(String(e)));
       }
     });
+  }
+
+  private commands: SlashCommand[] | null = null; // slash menu list (kept out of RunnerState: ~60 KB)
+
+  /** Asks the child for its slash commands (initialize control request; no user message, no tokens). */
+  async loadCommands(): Promise<SlashCommand[]> {
+    const res = await this.control('initialize');
+    this.commands = trimCommands(res.commands);
+    if (this.commands.length > 0) this.emit('commands', this.commands);
+    return this.commands;
+  }
+
+  commandList(): SlashCommand[] | null {
+    return this.commands;
   }
 
   /** Reads back what the child really applies and updates the badge from it. */
@@ -667,6 +685,8 @@ export interface RunnerOptions {
   sendNowWaitMs?: number; // how long send_now waits for the interrupted turn to end
   /** Lookup of uploaded chat attachments (id -> saved file). Without it every attachment id is refused. */
   uploads?: { resolve(id: string): StoredUpload | null };
+  /** Extra env for a child by session id (the server gives clip jobs their key after a restart). Merged under extraEnv. */
+  envForSession?: (sessionId: string) => Record<string, string>;
 }
 
 const SAFE_ID_RE = /^[A-Za-z0-9_-]+$/;
@@ -692,8 +712,22 @@ export class Runner extends EventEmitter {
   private readonly sessions = new Map<string, RunnerSession>();
   // jobs the user closed on purpose (see close()): removed as soon as their child exits
   private readonly closing = new Set<string>();
+  // extra env given at start (clip jobs: the ElevenLabs key), kept per session id for re-launches in THIS process only.
+  // Never written anywhere: not the command log, the DB, events or snapshots. A server restart loses it.
+  private readonly jobEnv = new Map<string, Record<string, string>>();
   private readonly opts: RunnerOptions;
   private readonly spawnFn: SpawnFn;
+  private lastCmds: SlashCommand[] | null = null;
+
+  /** Slash commands of one job (null until its child answered). */
+  commandsFor(sessionId: string): SlashCommand[] | null {
+    return this.sessions.get(sessionId)?.commandList() ?? null;
+  }
+
+  /** The list from the most recent job that answered. */
+  lastCommands(): SlashCommand[] | null {
+    return this.lastCmds;
+  }
 
   constructor(opts: RunnerOptions) {
     super();
@@ -775,10 +809,11 @@ export class Runner extends EventEmitter {
     sessionId: string,
     permissionMode: PermissionMode = DEFAULT_PERMISSION_MODE,
     remoteControl = false,
+    extraEnv: Record<string, string> = {},
   ): RunnerSession {
     const child = this.spawnFn(this.opts.claudeBin ?? 'claude', this.buildArgs(cliModel, effort, flag, permissionMode), {
       cwd,
-      env: childEnv(),
+      env: { ...childEnv(), ...(this.opts.envForSession?.(sessionId) ?? {}), ...extraEnv }, // extra envs are merged over the parent env for this child only
     });
     const session = new RunnerSession({
       sessionId,
@@ -793,6 +828,12 @@ export class Runner extends EventEmitter {
       stopGraceMs: this.opts.stopGraceMs,
     });
     this.sessions.set(sessionId, session);
+    session.on('commands', (c: SlashCommand[]) => {
+      this.lastCmds = c;
+    });
+    session.loadCommands().catch(() => {
+      // no list for this job: the API falls back to the last known one
+    });
     session.on('change', (state: RunnerState) => this.emit('change', state));
     session.on('turn_end', (e: TurnEnd) => this.emit('turn_end', e));
     session.on('stream_event', (id: string, ev: unknown) => this.emit('stream_event', id, ev));
@@ -815,10 +856,13 @@ export class Runner extends EventEmitter {
     return session;
   }
 
-  /** New job in a whitelisted folder. Returns the new session id. */
+  /**
+   * New job in a whitelisted folder. Returns the new session id.
+   * extraEnv: merged over the child's env for this job only (clip jobs pass the ElevenLabs key here, never in the prompt).
+   */
   start(
     req: { cwd: string; model: string; effort: EffortLevel; prompt: string; permissionMode?: PermissionMode; remoteControl?: boolean; attachments?: string[] },
-    opts: { trustedCwd?: boolean } = {},
+    opts: { trustedCwd?: boolean; extraEnv?: Record<string, string> } = {},
   ): string {
     // trustedCwd is only passed by server code that made the folder itself (Clip Studio); the browser cannot set it.
     const cwd = opts.trustedCwd ? this.trustCwd(req.cwd) : this.resolveCwd(req.cwd);
@@ -826,7 +870,9 @@ export class Runner extends EventEmitter {
     if (!cli) throw new CommandError('model not available');
     const content = this.userContent(req.prompt, req.attachments); // before the child exists: an unknown id starts nothing
     const sessionId = randomUUID();
-    const s = this.launch(cwd, cli, req.effort, ['--session-id', sessionId], sessionId, req.permissionMode ?? DEFAULT_PERMISSION_MODE, req.remoteControl === true);
+    const extra = { ...(opts.extraEnv ?? {}) };
+    if (Object.keys(extra).length > 0) this.jobEnv.set(sessionId, extra);
+    const s = this.launch(cwd, cli, req.effort, ['--session-id', sessionId], sessionId, req.permissionMode ?? DEFAULT_PERMISSION_MODE, req.remoteControl === true, extra);
     s.sendUser(content);
     return sessionId;
   }
@@ -855,11 +901,12 @@ export class Runner extends EventEmitter {
     this.launch(
       cwd,
       cli,
-      req.effort ?? 'high',
+      req.effort ?? DEFAULT_EFFORT,
       ['--resume', req.sessionId],
       req.sessionId,
       req.permissionMode ?? DEFAULT_PERMISSION_MODE,
       req.remoteControl === true,
+      this.jobEnv.get(req.sessionId) ?? {}, // a clip job keeps its env when it is re-launched in this process
     );
     return req.sessionId;
   }
@@ -882,7 +929,7 @@ export class Runner extends EventEmitter {
     const found: StoredUpload[] = [];
     for (const id of attachments) {
       const a = this.opts.uploads?.resolve(id) ?? null;
-      if (!a) throw new CommandError('ไม่พบไฟล์แนบ (อาจถูกลบแล้ว) — แนบใหม่อีกครั้ง');
+      if (!a) throw new CommandError('ไม่พบไฟล์แนบ (อาจถูกลบแล้ว) — แนบใหม่อีกครั้ง', 'srv.runner.attachMissing');
       found.push(a);
     }
     return buildUserContent(text, found);
@@ -902,10 +949,12 @@ export class Runner extends EventEmitter {
   async sendNow(sessionId: string): Promise<string> {
     const s = this.live(sessionId);
     const items = s.queuedMessages();
-    if (items.length === 0) throw new CommandError('ไม่มีข้อความรอส่ง');
+    if (items.length === 0) throw new CommandError('ไม่มีข้อความรอส่ง', 'srv.runner.noQueued');
     const base = s.turnStartCount;
     const ended = await s.interruptAndWait(this.opts.sendNowWaitMs ?? 15_000);
-    if (!ended || !s.state().alive) throw new CommandError('หยุดงานไม่สำเร็จ — ตัวงานปิดไป ข้อความที่รอส่งหายไปด้วย');
+    if (!ended || !s.state().alive) {
+      throw new CommandError('หยุดงานไม่สำเร็จ — ตัวงานปิดไป ข้อความที่รอส่งหายไปด้วย', 'srv.runner.stopFailed');
+    }
     // Claude Code keeps what was queued behind an interrupted tool and starts on all of it by itself, as ONE merged
     // turn: ~150 ms after the interrupted turn's `result` it emits `system init`, and about a second later the replay
     // echo of the merged message (measured live). Those messages are delivered already: sending them again would

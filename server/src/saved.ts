@@ -356,7 +356,7 @@ export class SavedService extends EventEmitter {
 
   /** Only flips `hidden`. Never touches a transcript file. */
   setHidden(sessionId: string, hidden: boolean): void {
-    if (!this.deps.db.setSavedHidden(sessionId, hidden, this.now())) throw new CommandError('ไม่พบ session นี้ในรายการที่บันทึก');
+    if (!this.deps.db.setSavedHidden(sessionId, hidden, this.now())) throw new CommandError('ไม่พบ session นี้ในรายการที่บันทึก', 'srv.saved.notFound');
     if (hidden) this.hidden.add(sessionId);
     else this.hidden.delete(sessionId);
     this.touch();
@@ -367,19 +367,19 @@ export class SavedService extends EventEmitter {
     const runner = this.deps.runner;
     if (!runner) throw new CommandError('runner is not enabled');
     const row = this.deps.db.getSaved(req.sessionId);
-    if (!row) throw new CommandError('ไม่พบ session นี้ในรายการที่บันทึก');
+    if (!row) throw new CommandError('ไม่พบ session นี้ในรายการที่บันทึก', 'srv.saved.notFound');
     // a Runner child also shows up in the watcher snapshot, so it is checked first
-    if (runner.isAlive(req.sessionId)) throw new CommandError('งานนี้เปิดอยู่แล้ว');
+    if (runner.isAlive(req.sessionId)) throw new CommandError('งานนี้เปิดอยู่แล้ว', 'srv.saved.alreadyOpen');
     const term = this.deps.snapshot().find((s) => s.sessionId === req.sessionId);
-    if (term && this.deps.pidAlive(term.pid)) throw new CommandError('session นี้ยังเปิดอยู่ใน terminal');
-    if (!findTranscript(this.deps.projectsDir, req.sessionId)) throw new CommandError('ไม่พบไฟล์ transcript');
+    if (term && this.deps.pidAlive(term.pid)) throw new CommandError('session นี้ยังเปิดอยู่ใน terminal', 'srv.saved.inTerminal');
+    if (!findTranscript(this.deps.projectsDir, req.sessionId)) throw new CommandError('ไม่พบไฟล์ transcript', 'srv.saved.noTranscript');
     let isDir = false;
     try {
       isDir = fs.statSync(row.cwd).isDirectory();
     } catch {
       isDir = false;
     }
-    if (!isDir) throw new CommandError('ไม่พบโฟลเดอร์ของงานนี้');
+    if (!isDir) throw new CommandError('ไม่พบโฟลเดอร์ของงานนี้', 'srv.saved.noFolder');
     const storedEffort = (EFFORT_LEVELS as readonly string[]).includes(row.effort ?? '') ? (row.effort as EffortLevel) : undefined;
     const rawModel = row.model && SAFE_MODEL_RE.test(row.model) ? row.model : null;
     runner.adopt(

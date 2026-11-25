@@ -8,8 +8,9 @@ import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { MACHINE_SHELLS, type AgentState, type MachineAttachment, type MachineFields, type MachineInfo, type MachineShell, type TailscalePeer } from '../../shared/protocol';
+import { MACHINE_SHELLS, type AgentState, type MachineAttachment, type MachineFields, type MachineInfo, type MachineShell, type TailscalePeer, type VarMap } from '../../shared/protocol';
 import type { MachineRow, WorklogDb } from './db';
+import type { CodedText } from '../../shared/usage';
 import { CommandError } from './runner';
 
 export const PROBE_MS = 30_000;
@@ -27,15 +28,28 @@ export const SEED_MACHINES: readonly Omit<MachineRow, 'created'>[] = [];
 
 /** Shape checks that need no file system (shared with commands.ts). Returns a Thai error or null. */
 export function checkMachineShape(input: object): string | null {
+  return checkMachineShapeCoded(input)?.text ?? null;
+}
+
+/** checkMachineShape with the stable code of the failed rule (srv.machine.*). */
+export function checkMachineShapeCoded(input: object): CodedText | null {
   const f = input as Record<string, unknown>;
-  if (typeof f.name !== 'string' || f.name.trim().length < 1 || f.name.trim().length > NAME_MAX || CTRL_RE.test(f.name)) return 'ชื่อเครื่องต้องยาว 1-40 ตัวอักษร';
+  if (typeof f.name !== 'string' || f.name.trim().length < 1 || f.name.trim().length > NAME_MAX || CTRL_RE.test(f.name)) {
+    return { text: 'ชื่อเครื่องต้องยาว 1-40 ตัวอักษร', code: 'srv.machine.nameLength', vars: { max: NAME_MAX } };
+  }
   // a leading '-' would make ssh read the host or user as an option
-  if (typeof f.host !== 'string' || !HOST_RE.test(f.host) || f.host.startsWith('-') || f.host.startsWith('.')) return 'host ไม่ถูกต้อง (IP หรือชื่อเครื่อง)';
-  if (typeof f.user !== 'string' || !USER_RE.test(f.user) || f.user.startsWith('-')) return 'user ไม่ถูกต้อง';
-  if (typeof f.keyPath !== 'string' || f.keyPath.length > 500 || CTRL_RE.test(f.keyPath)) return 'key path ไม่ถูกต้อง';
-  if (typeof f.shell !== 'string' || !(MACHINE_SHELLS as readonly string[]).includes(f.shell)) return 'shell ต้องเป็น cmd, powershell หรือ bash';
-  if (f.notes !== undefined && (typeof f.notes !== 'string' || f.notes.length > NOTES_MAX)) return 'หมายเหตุยาวเกินไป';
-  if (f.agent !== undefined && typeof f.agent !== 'boolean') return 'agent ต้องเป็น true หรือ false';
+  if (typeof f.host !== 'string' || !HOST_RE.test(f.host) || f.host.startsWith('-') || f.host.startsWith('.')) {
+    return { text: 'host ไม่ถูกต้อง (IP หรือชื่อเครื่อง)', code: 'srv.machine.hostInvalid' };
+  }
+  if (typeof f.user !== 'string' || !USER_RE.test(f.user) || f.user.startsWith('-')) return { text: 'user ไม่ถูกต้อง', code: 'srv.machine.userInvalid' };
+  if (typeof f.keyPath !== 'string' || f.keyPath.length > 500 || CTRL_RE.test(f.keyPath)) return { text: 'key path ไม่ถูกต้อง', code: 'srv.machine.keyPathInvalid' };
+  if (typeof f.shell !== 'string' || !(MACHINE_SHELLS as readonly string[]).includes(f.shell)) {
+    return { text: 'shell ต้องเป็น cmd, powershell หรือ bash', code: 'srv.machine.shellInvalid' };
+  }
+  if (f.notes !== undefined && (typeof f.notes !== 'string' || f.notes.length > NOTES_MAX)) {
+    return { text: 'หมายเหตุยาวเกินไป', code: 'srv.machine.notesTooLong' };
+  }
+  if (f.agent !== undefined && typeof f.agent !== 'boolean') return { text: 'agent ต้องเป็น true หรือ false', code: 'srv.machine.agentNotBool' };
   return null;
 }
 
@@ -177,7 +191,7 @@ export class MachineService extends EventEmitter {
   private readonly connect: ConnectFn;
   private readonly execFile: ExecFileFn;
   private readonly status = new Map<string, Status>();
-  private readonly agentStatus = new Map<string, { state: AgentState; error?: string; cwds?: string[] }>();
+  private readonly agentStatus = new Map<string, { state: AgentState; error?: string; code?: string; vars?: VarMap; cwds?: string[] }>();
   private readonly attach = new Map<string, MachineAttachment>(); // key sessionId|machineId
   private peers: TailscalePeer[] = [];
   private probeTimer: NodeJS.Timeout | null = null;
@@ -209,8 +223,8 @@ export class MachineService extends EventEmitter {
 
   /** Full validation of a form: shape + the key file (must exist under ~/.ssh). Returns the cleaned fields. */
   validate(f: MachineFields): Omit<MachineRow, 'id' | 'created'> {
-    const err = checkMachineShape(f);
-    if (err) throw new CommandError(err);
+    const err = checkMachineShapeCoded(f);
+    if (err) throw new CommandError(err.text, err.code, err.vars);
     let keyPath = '';
     if (f.keyPath.trim() !== '') {
       keyPath = this.resolveKey(f.keyPath.trim());
@@ -220,7 +234,7 @@ export class MachineService extends EventEmitter {
       } catch {
         ok = false;
       }
-      if (!ok) throw new CommandError('ไม่พบไฟล์ key ใน ~/.ssh');
+      if (!ok) throw new CommandError('ไม่พบไฟล์ key ใน ~/.ssh', 'srv.machine.keyMissing');
     }
     return { name: oneLine(f.name), host: f.host, user: f.user, keyPath, shell: f.shell, notes: oneLine(f.notes ?? ''), agent: f.agent === true };
   }
@@ -228,12 +242,12 @@ export class MachineService extends EventEmitter {
   /** Expands ~ and refuses anything outside ~/.ssh (also through symlinks). Does not read the file. */
   private resolveKey(raw: string): string {
     const abs = path.resolve(resolveTilde(raw));
-    if (!this.insideSsh(abs)) throw new CommandError('key ต้องอยู่ในโฟลเดอร์ ~/.ssh เท่านั้น');
+    if (!this.insideSsh(abs)) throw new CommandError('key ต้องอยู่ในโฟลเดอร์ ~/.ssh เท่านั้น', 'srv.machine.keyOutsideSsh');
     try {
       const real = fs.realpathSync(abs);
       const root = fs.realpathSync(this.sshDir);
       const rel = path.relative(root.toLowerCase(), real.toLowerCase());
-      if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) throw new CommandError('key ต้องอยู่ในโฟลเดอร์ ~/.ssh เท่านั้น');
+      if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) throw new CommandError('key ต้องอยู่ในโฟลเดอร์ ~/.ssh เท่านั้น', 'srv.machine.keyOutsideSsh');
     } catch (e) {
       if (e instanceof CommandError) throw e;
       // file missing: the existence check reports it
@@ -258,7 +272,7 @@ export class MachineService extends EventEmitter {
 
   update(id: string, f: MachineFields): string {
     const cur = this.deps.db.getMachine(id);
-    if (!cur) throw new CommandError('ไม่พบเครื่องนี้');
+    if (!cur) throw new CommandError('ไม่พบเครื่องนี้', 'srv.machine.notFound');
     const clean = this.validate(f);
     if (f.agent === undefined) clean.agent = cur.agent === true; // an older form that does not know the toggle keeps it
     this.deps.db.updateMachine({ id, ...clean });
@@ -273,7 +287,7 @@ export class MachineService extends EventEmitter {
 
   /** Removes the machine and every attachment to it. */
   remove(id: string): string {
-    if (!this.deps.db.deleteMachine(id)) throw new CommandError('ไม่พบเครื่องนี้');
+    if (!this.deps.db.deleteMachine(id)) throw new CommandError('ไม่พบเครื่องนี้', 'srv.machine.notFound');
     for (const [k, a] of [...this.attach]) if (a.machineId === id) this.attach.delete(k);
     this.status.delete(id);
     this.agentStatus.delete(id);
@@ -304,7 +318,11 @@ export class MachineService extends EventEmitter {
       const ag = this.agentStatus.get(r.id);
       out.agent = true;
       out.agentState = ag?.state ?? 'connecting';
-      if (ag?.state === 'error' && ag.error) out.agentError = ag.error;
+      if (ag?.state === 'error' && ag.error) {
+        out.agentError = ag.error;
+        if (ag.code) out.agentCode = ag.code;
+        if (ag.vars) out.agentVars = ag.vars;
+      }
       if (ag?.cwds && ag.cwds.length > 0) out.agentCwds = ag.cwds;
     }
     return out;
@@ -404,14 +422,14 @@ export class MachineService extends EventEmitter {
   // ----- ssh test -----
 
   private configured(r: MachineRow): void {
-    if (r.user === '' || r.keyPath === '') throw new CommandError('เครื่องนี้ยังไม่ได้ตั้งค่า SSH');
-    if (!this.insideSsh(r.keyPath)) throw new CommandError('key ต้องอยู่ในโฟลเดอร์ ~/.ssh เท่านั้น');
+    if (r.user === '' || r.keyPath === '') throw new CommandError('เครื่องนี้ยังไม่ได้ตั้งค่า SSH', 'srv.machine.noSsh');
+    if (!this.insideSsh(r.keyPath)) throw new CommandError('key ต้องอยู่ในโฟลเดอร์ ~/.ssh เท่านั้น', 'srv.machine.keyOutsideSsh');
   }
 
   /** Runs `ssh ... echo cr-ok` once. Records ok / fail (first stderr line, clipped 200). */
   async test(id: string): Promise<void> {
     const r = this.deps.db.getMachine(id);
-    if (!r) throw new CommandError('ไม่พบเครื่องนี้');
+    if (!r) throw new CommandError('ไม่พบเครื่องนี้', 'srv.machine.notFound');
     this.configured(r);
     const args = [
       '-i', r.keyPath,
@@ -455,9 +473,9 @@ export class MachineService extends EventEmitter {
   /** Tells a live Runner job about a machine, once per (job, machine). */
   attachJob(sessionId: string, machineId: string): void {
     const runner = this.deps.runner;
-    if (!runner || !runner.isAlive(sessionId)) throw new CommandError('ต่อเครื่องได้เฉพาะงานที่คุมจากเว็บ');
+    if (!runner || !runner.isAlive(sessionId)) throw new CommandError('ต่อเครื่องได้เฉพาะงานที่คุมจากเว็บ', 'srv.machine.attachWebOnly');
     const m = this.deps.db.getMachine(machineId);
-    if (!m) throw new CommandError('ไม่พบเครื่องนี้');
+    if (!m) throw new CommandError('ไม่พบเครื่องนี้', 'srv.machine.notFound');
     this.configured(m);
     if (this.attach.has(this.key(sessionId, machineId))) return; // idempotent
     runner.send(sessionId, attachMessage(m));

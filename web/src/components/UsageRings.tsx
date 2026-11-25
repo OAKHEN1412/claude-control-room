@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { RunnerState, SessionInfo } from '../../../shared/protocol';
 import { type UsageSnapshot, levelOf } from '../../../shared/usage';
 import { type RingView, contextRing, liveSessionIds, pickContext, quotaRing } from '../usageView';
+import { useT } from '../i18n';
 import './usage.css';
 
 export interface UsageRingsProps {
@@ -16,8 +17,9 @@ const R = 11;
 const C = 2 * Math.PI * R;
 
 function Ring({ view, open, onOpen, children }: { view: RingView; open: boolean; onOpen: (o: boolean) => void; children?: React.ReactNode }) {
+  const t = useT();
   const frac = view.pct === null ? 0 : Math.max(0, Math.min(1, view.pct / 100));
-  const summary = `${view.title}: ${view.pct === null ? 'ยังไม่มีข้อมูล' : `${Math.round(view.pct)}%`}`;
+  const summary = `${view.title}: ${view.pct === null ? t('shell.usage.noData') : `${Math.round(view.pct)}%`}`;
   return (
     <div
       className={`cr-ring is-${view.level}${view.dim ? ' is-dim' : ''}${open ? ' is-open' : ''}`}
@@ -57,6 +59,7 @@ function Ring({ view, open, onOpen, children }: { view: RingView; open: boolean;
 }
 
 export function UsageRings({ usage, sessions, runners, selectedSessionId, now }: UsageRingsProps) {
+  const t = useT();
   const [open, setOpen] = useState<string | null>(null);
   const nameOf = (id: string) => {
     const s = sessions.find((x) => x.sessionId === id);
@@ -70,7 +73,7 @@ export function UsageRings({ usage, sessions, runners, selectedSessionId, now }:
   const ctx = contextRing(session, followed, now, nameOf);
   const bind = (k: string) => (o: boolean) => setOpen((cur) => (o ? k : cur === k ? null : cur));
   return (
-    <div className="cr-usage" role="group" aria-label="โควตาและ context">
+    <div className="cr-usage" role="group" aria-label={t('shell.usage.group')}>
       <Ring view={five} open={open === 'five'} onOpen={bind('five')} />
       <Ring view={week} open={open === 'week'} onOpen={bind('week')} />
       <Ring view={ctx} open={open === 'ctx'} onOpen={bind('ctx')}>

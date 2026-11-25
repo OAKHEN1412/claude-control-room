@@ -1,4 +1,5 @@
 import type { Status } from '../../../shared/protocol';
+import { t, type TKey } from '../i18n';
 
 // Pure layout + label helpers for the network graph. No React here.
 // Layout is in real pixels: node height is fixed (never divided by the row count), the stage grows
@@ -157,13 +158,19 @@ export function layoutGraph(sessions: ReadonlyArray<LayoutSession>, opts: Layout
 
 // ---- labels and status helpers -------------------------------------------
 
-export const STATUS_WORD: Record<Status, string> = {
-  running: 'กำลังทำ',
-  waiting: 'รอคุณ',
-  idle: 'ว่าง',
-  done: 'เสร็จ',
-  unreadable: 'อ่านไม่ได้',
+const STATUS_KEY: Record<Status, TKey> = {
+  running: 'panels.status.running',
+  waiting: 'panels.status.waiting',
+  idle: 'panels.status.idle',
+  done: 'panels.status.done',
+  unreadable: 'panels.status.unreadable',
 };
+
+/** Status word in the current language. Each read translates at access time, so a language switch shows at once. */
+export const STATUS_WORD = {} as Record<Status, string>;
+for (const s of Object.keys(STATUS_KEY) as Status[]) {
+  Object.defineProperty(STATUS_WORD, s, { get: () => t(STATUS_KEY[s]), enumerable: true });
+}
 
 export const STATUS_VAR: Record<Status, string> = {
   running: 'var(--running)',

@@ -1,6 +1,7 @@
 // A remote machine on the canvas: name, host, reachability dot and SSH badge. Click opens its drawer; wires from AI blocks drop here.
 import { memo } from 'react';
-import { REACH_WORD, SSH_WORD, agentLine, shortKeyPath } from '../machineForm';
+import { agentLine, shortKeyPath } from '../machineForm';
+import { useT, type TKey } from '../i18n';
 import type { MachineInfo } from '../protocolNext';
 import { ComputerIcon } from './icons';
 import { machineKey, type MachinePlace } from './machineLayout';
@@ -14,9 +15,23 @@ export interface RemoteMachineNodeProps {
   hot: boolean;
 }
 
+const REACH_KEY: Record<MachineInfo['reach'], TKey> = {
+  online: 'canvas.remote.reachOnline',
+  offline: 'canvas.remote.reachOffline',
+  unknown: 'canvas.remote.reachUnknown',
+};
+const SSH_KEY: Record<MachineInfo['ssh'], TKey> = {
+  ok: 'canvas.remote.sshOk',
+  fail: 'canvas.remote.sshFail',
+  untested: 'canvas.remote.sshUntested',
+  not_configured: 'canvas.remote.sshNotConfigured',
+};
+
 export const RemoteMachineNode = memo(function RemoteMachineNode({ place, machine, selected, hot }: RemoteMachineNodeProps) {
+  const t = useT();
   const { box } = place;
-  const label = `เครื่อง ${machine.name} ${REACH_WORD[machine.reach]} ${SSH_WORD[machine.ssh]}`;
+  const ssh = t(SSH_KEY[machine.ssh]);
+  const label = t('canvas.remote.aria', { name: machine.name, reach: t(REACH_KEY[machine.reach]), ssh });
   return (
     <div
       className={`cv-node cv-rm${selected ? ' is-selected' : ''}${hot ? ' is-hot' : ''}`}
@@ -41,7 +56,7 @@ export const RemoteMachineNode = memo(function RemoteMachineNode({ place, machin
         </div>
         <div className="cv-rm-host">{machine.host}</div>
         <div className="cv-rm-badges">
-          <span className={`cv-rm-badge is-${sshTone(machine.ssh)}`}>{SSH_WORD[machine.ssh]}</span>
+          <span className={`cv-rm-badge is-${sshTone(machine.ssh)}`}>{ssh}</span>
           {machine.agent && (
             <span className={`cv-rm-badge is-${machine.agentState === 'online' ? 'ok' : machine.agentState === 'error' ? 'bad' : 'idle'}`} title={agentLine(machine)} data-agent={machine.agentState ?? 'connecting'}>
               {agentLine(machine)}

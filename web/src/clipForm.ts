@@ -1,6 +1,8 @@
 // Pure helpers of the Clip Studio page: ratio frames, presets, the "type a topic, press Enter" flow, queue lines.
 // No React here so every rule can be tested without a browser.
-import { CLIP_OUTRO_MAX, CLIP_OUTRO_SAVED_MAX, CLIP_STAGES, cleanOutroText, type ClipJob, type ClipOutro, type ClipOutroPhrase, type ClipPreset, type ClipQueueItem, type ClipSettings } from '../../shared/protocol';
+import { CLIP_OUTRO_MAX, CLIP_OUTRO_SAVED_MAX, CLIP_STAGES, CLIP_STAGE_CODES, cleanOutroText, type ClipJob, type ClipOutro, type ClipOutroPhrase, type ClipPreset, type ClipQueueItem, type ClipSettings } from '../../shared/protocol';
+import { t, type TKey } from './i18n';
+import { serverCode } from './i18n/serverMsg';
 
 export type Ratio = ClipSettings['ratio'];
 
@@ -8,14 +10,29 @@ export interface RatioInfo {
   ratio: Ratio;
   w: number; // proportion, e.g. 16
   h: number; // 9
-  name: string; // "แนวนอน"
-  platforms: string; // "YouTube · จอทีวี"
+  readonly name: string; // "แนวนอน", read in the current language
+  readonly platforms: string; // "YouTube · จอทีวี", read in the current language
+}
+
+/** Labels are read on each access, so they follow the UI language. */
+function ratioInfo(ratio: Ratio, w: number, h: number, nameKey: TKey, platformsKey: TKey): RatioInfo {
+  return {
+    ratio,
+    w,
+    h,
+    get name() {
+      return t(nameKey);
+    },
+    get platforms() {
+      return t(platformsKey);
+    },
+  };
 }
 
 export const RATIO_INFO: Record<Ratio, RatioInfo> = {
-  '16:9': { ratio: '16:9', w: 16, h: 9, name: 'แนวนอน', platforms: 'YouTube · จอทีวี' },
-  '9:16': { ratio: '9:16', w: 9, h: 16, name: 'แนวตั้ง', platforms: 'TikTok · Reels · Shorts' },
-  '1:1': { ratio: '1:1', w: 1, h: 1, name: 'จัตุรัส', platforms: 'Facebook · IG feed' },
+  '16:9': ratioInfo('16:9', 16, 9, 'clip.form.ratio.landscape', 'clip.form.platforms.landscape'),
+  '9:16': ratioInfo('9:16', 9, 16, 'clip.form.ratio.portrait', 'clip.form.platforms.portrait'),
+  '1:1': ratioInfo('1:1', 1, 1, 'clip.form.ratio.square', 'clip.form.platforms.square'),
 };
 
 /** "แนวนอน 16:9" */
@@ -30,7 +47,17 @@ export function ratioFrame(ratio: Ratio, box: number): { w: number; h: number } 
   return { w: Math.round((box * w) / long), h: Math.round((box * h) / long) };
 }
 
-export const LENGTH_LABEL: Record<ClipSettings['length'], string> = { '30s': '30 วิ', '60s': '60 วิ', '90s': '90 วิ', '3min': '3 นาที' };
+const LENGTH_KEYS: Record<ClipSettings['length'], TKey> = {
+  '30s': 'clip.form.len.30s',
+  '60s': 'clip.form.len.60s',
+  '90s': 'clip.form.len.90s',
+  '3min': 'clip.form.len.3min',
+};
+
+/** "60 วิ" / "60 sec": a clip length as shown to the user. */
+export function lengthLabel(len: ClipSettings['length']): string {
+  return t(LENGTH_KEYS[len]);
+}
 
 /** Everything a preset stores, as the page holds it. */
 export interface ClipForm extends ClipSettings {
@@ -52,9 +79,9 @@ export function formSettings(f: ClipForm): ClipSettings {
 /** First line of the ending, cut for a list: "ท้ายคลิป: กดติดตาม…". Null when the clip has no ending. */
 export function outroLine(s: { outro?: ClipOutro }, max = 60): string | null {
   const o = outroOf(s);
-  const t = o.on ? cleanOutroText(o.text).replace(/\s*\n\s*/g, ' / ') : '';
-  if (t === '') return null;
-  return `ท้ายคลิป: ${[...t].length > max ? `${[...t].slice(0, max).join('')}…` : t}`;
+  const text = o.on ? cleanOutroText(o.text).replace(/\s*\n\s*/g, ' / ') : '';
+  if (text === '') return null;
+  return t('clip.form.outroLine', { text: [...text].length > max ? `${[...text].slice(0, max).join('')}…` : text });
 }
 
 /** Default name of a saved ending: the first 20 characters of its text. */
@@ -62,11 +89,11 @@ export function outroDefaultName(text: string): string {
   return [...cleanOutroText(text).replace(/\s+/g, ' ')].slice(0, 20).join('');
 }
 
-/** Can the ending be saved / sent as typed? Returns the Thai reason when not. */
+/** Can the ending be saved / sent as typed? Returns the reason (in the UI language) when not. */
 export function outroProblem(o: ClipOutro): string | null {
-  const t = cleanOutroText(o.text);
-  if ([...t].length > CLIP_OUTRO_MAX) return `ยาวเกิน ${CLIP_OUTRO_MAX} ตัวอักษร`;
-  if (o.on && t === '') return 'เปิดท้ายคลิปแล้ว — พิมพ์ข้อความก่อน';
+  const text = cleanOutroText(o.text);
+  if ([...text].length > CLIP_OUTRO_MAX) return t('clip.form.outroTooLong', { max: CLIP_OUTRO_MAX });
+  if (o.on && text === '') return t('clip.form.outroEmpty');
   return null;
 }
 
@@ -96,7 +123,14 @@ export function formMatchesPreset(f: ClipForm, p: Pick<ClipPreset, 'settings' | 
 
 /** "60 วิ · ไทย · เสียง · เพลง · เทค, บอท" */
 export function settingsSummary(s: ClipSettings): string {
-  return [LENGTH_LABEL[s.length], s.lang === 'th' ? 'ไทย' : 'English', s.voice ? 'เสียง' : 'ไม่มีเสียง', s.music ? 'เพลง' : 'ไม่มีเพลง', s.cast.length > 0 ? s.cast.join(' ') : 'ไม่มีตัวละคร', ...(outroOf(s).on ? ['มีท้ายคลิป'] : [])].join(' · ');
+  return [
+    lengthLabel(s.length),
+    s.lang === 'th' ? t('clip.form.langTh') : t('clip.form.langEn'),
+    s.voice ? t('clip.form.voice') : t('clip.form.noVoice'),
+    s.music ? t('clip.form.music') : t('clip.form.musicOff'),
+    s.cast.length > 0 ? s.cast.join(' ') : t('clip.form.noCast'),
+    ...(outroOf(s).on ? [t('clip.form.hasOutro')] : []),
+  ].join(' · ');
 }
 
 /** The topic form after a clip was queued: topic and points are cleared, every setting stays. */
@@ -119,22 +153,30 @@ export function readyJobs(jobs: ClipJob[]): ClipJob[] {
   return jobs.filter((j) => j.ready && !j.renderRequested);
 }
 
+/** Name of one pipeline stage (index into CLIP_STAGES, which is the shared stage order). */
+export function stageLabel(i: number): string {
+  const keys: TKey[] = ['clip.stage.script', 'clip.stage.storyboard', 'clip.stage.scenes', 'clip.stage.preview', 'clip.stage.ready'];
+  const key = keys[i];
+  const local = key ? t(key) : (CLIP_STAGES[i] ?? '');
+  return serverCode(CLIP_STAGE_CODES[i], undefined, local);
+}
+
 /** Generic status line of one started clip. `alive` = its Runner child is running (undefined = unknown). */
 export function jobStatusLine(j: ClipJob, alive: boolean | undefined): { text: string; tone: 'ready' | 'done' | 'run' | 'stop' } {
-  if (j.renderRequested) return { text: 'ส่งคำสั่ง "render ได้" แล้ว', tone: 'done' };
-  if (j.ready) return { text: 'พร้อม render — รอคุณสั่ง', tone: 'ready' };
-  if (alive === false) return { text: `หยุดทำงานที่ขั้น ${j.stage + 1}/5 ${CLIP_STAGES[j.stage]}`, tone: 'stop' };
-  return { text: `กำลังทำ — ขั้น ${j.stage + 1}/5 ${CLIP_STAGES[j.stage]}`, tone: 'run' };
+  if (j.renderRequested) return { text: t('clip.form.renderSent'), tone: 'done' };
+  if (j.ready) return { text: t('clip.form.readyWait'), tone: 'ready' };
+  if (alive === false) return { text: t('clip.form.stopped', { n: j.stage + 1, stage: stageLabel(j.stage) }), tone: 'stop' };
+  return { text: t('clip.form.running', { n: j.stage + 1, stage: stageLabel(j.stage) }), tone: 'run' };
 }
 
 /** Queue entries first (oldest waiting at the top of the waiting block), then started clips newest first. */
 export function queueStatusLine(q: ClipQueueItem, position: number): string {
-  return q.error ? `เริ่มไม่ได้: ${q.error}` : `รอคิว — ลำดับที่ ${position}`;
+  return q.error ? t('clip.form.startFailed', { error: q.error }) : t('clip.form.queued', { n: position });
 }
 
 /** Name suggestion for "+ บันทึกชุดใหม่", never one that already exists. */
 export function suggestName(f: ClipForm, styleName: string | undefined, taken: string[]): string {
-  const base = `${styleName ?? 'ชุดใหม่'} · ${ratioTitle(f.ratio)} · ${LENGTH_LABEL[f.length]}`;
+  const base = `${styleName ?? t('clip.form.newPreset')} · ${ratioTitle(f.ratio)} · ${lengthLabel(f.length)}`;
   if (!taken.includes(base)) return base;
   for (let n = 2; ; n++) if (!taken.includes(`${base} (${n})`)) return `${base} (${n})`;
 }
@@ -142,5 +184,5 @@ export function suggestName(f: ClipForm, styleName: string | undefined, taken: s
 /** Name of the preset a started clip matches (same settings and style), else a plain "style · ratio · length". */
 export function clipSettingsLabel(presets: ClipPreset[], settings: ClipSettings, styleId: string, styleName: string): string {
   const hit = presets.find((p) => formMatchesPreset({ ...settings, style: styleId }, p));
-  return hit ? hit.name : `${styleName} · ${ratioTitle(settings.ratio)} · ${LENGTH_LABEL[settings.length]}`;
+  return hit ? hit.name : `${styleName} · ${ratioTitle(settings.ratio)} · ${lengthLabel(settings.length)}`;
 }

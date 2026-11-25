@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { LINK_MAX_FORWARDS_DEFAULT, LINK_MAX_FORWARDS_LIMIT, type LinkInfo } from '../../shared/protocol';
 import { stripSecrets } from './secrets';
+import { codeOf } from './codedError';
 import { CommandError } from './runner';
 
 export const RELAY_TEXT_MAX = 8000;
@@ -69,18 +70,20 @@ export class Relay extends EventEmitter {
 
   private get(linkId: string): Link {
     const l = this.links.get(linkId);
-    if (!l) throw new CommandError('ไม่พบลิงก์นี้');
+    if (!l) throw new CommandError('ไม่พบลิงก์นี้', 'srv.relay.notFound');
     return l;
   }
 
   create(from: string, to: string, maxForwards: number = LINK_MAX_FORWARDS_DEFAULT): string {
-    if (from === to) throw new CommandError('ต้นทางกับปลายทางต้องเป็นคนละงาน');
+    if (from === to) throw new CommandError('ต้นทางกับปลายทางต้องเป็นคนละงาน', 'srv.relay.sameJob');
     if (!Number.isInteger(maxForwards) || maxForwards < 1 || maxForwards > LINK_MAX_FORWARDS_LIMIT) {
-      throw new CommandError(`จำนวนครั้งส่งต่อสูงสุดต้อง 1-${LINK_MAX_FORWARDS_LIMIT}`);
+      throw new CommandError(`จำนวนครั้งส่งต่อสูงสุดต้อง 1-${LINK_MAX_FORWARDS_LIMIT}`, 'srv.relay.maxForwards', { max: LINK_MAX_FORWARDS_LIMIT });
     }
-    if (!this.deps.isLiveRunner(to)) throw new CommandError('ปลายทางต้องเป็นงานที่คุมจากเว็บ');
-    if (!this.deps.exists(from)) throw new CommandError('ไม่พบงานต้นทาง');
-    for (const l of this.links.values()) if (l.from === from && l.to === to) throw new CommandError('มีลิงก์นี้อยู่แล้ว');
+    if (!this.deps.isLiveRunner(to)) throw new CommandError('ปลายทางต้องเป็นงานที่คุมจากเว็บ', 'srv.relay.targetNotWeb');
+    if (!this.deps.exists(from)) throw new CommandError('ไม่พบงานต้นทาง', 'srv.relay.sourceMissing');
+    for (const l of this.links.values()) {
+      if (l.from === from && l.to === to) throw new CommandError('มีลิงก์นี้อยู่แล้ว', 'srv.relay.exists');
+    }
     const id = (this.deps.newId ?? (() => `l${randomUUID().replace(/-/g, '').slice(0, 10)}`))();
     this.links.set(id, {
       id, from, to, paused: false, state: 'ok', forwards: 0, maxForwards, lastForwardAt: null, createdAt: this.now(),
@@ -108,6 +111,8 @@ export class Relay extends EventEmitter {
     l.forwards = 0;
     l.state = 'ok';
     delete l.error;
+    delete l.code;
+    delete l.vars;
     this.changed();
   }
 
@@ -158,11 +163,14 @@ export class Relay extends EventEmitter {
         break;
       }
       try {
-        if (!this.deps.isLiveRunner(l.to)) throw new CommandError('ปลายทางไม่ได้ทำงานอยู่');
+        if (!this.deps.isLiveRunner(l.to)) throw new CommandError('ปลายทางไม่ได้ทำงานอยู่', 'srv.relay.targetIdle');
         this.deps.send(l.to, message);
       } catch (e) {
         l.state = 'error';
         l.error = e instanceof Error ? e.message : String(e);
+        const c = codeOf(e);
+        if (c.code !== undefined) l.code = c.code;
+        if (c.vars !== undefined) l.vars = c.vars;
         this.deps.log?.({ cmd: 'link_forward', ok: false, linkId: l.id, from: l.from, to: l.to, error: l.error });
         touched = true;
         continue;

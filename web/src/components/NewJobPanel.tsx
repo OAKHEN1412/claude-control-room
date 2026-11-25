@@ -5,8 +5,10 @@ import {
 } from '../../../shared/protocol';
 import { PermissionModeField, RemoteToggle, type Command } from './Controls';
 import { AttachButton, AttachChips, DropOverlay } from './AttachBar';
+import { Composer } from './Composer';
 import { useNewJobForm } from './useNewJobForm';
 import type { MachineInfo } from '../protocolNext';
+import { useT } from '../i18n';
 import './control.css';
 
 export interface NewJobPanelProps {
@@ -19,19 +21,20 @@ export interface NewJobPanelProps {
 }
 
 export function NewJobPanel({ cwds, command, disabledReason, onStarted, onClose, machines }: NewJobPanelProps) {
+  const t = useT();
   const f = useNewJobForm({ cwds, command, disabledReason, onStarted, machines });
   const { choices, cwd, model, effort, prompt, permMode, rc, canStart } = f;
   const error = f.error && !disabledReason ? f.error : null;
   const start = f.start;
 
   return (
-    <section className="cn-panel" aria-label="เปิดงานใหม่" ref={f.att.bindHost}>
+    <section className="cn-panel" aria-label={t('panels.newJob.aria')} ref={f.att.bindHost}>
       <DropOverlay att={f.att} />
       {f.machineChoices.length > 0 && (
         <div className="cn-field" style={{ flex: '0 1 170px' }}>
-          <label htmlFor="cn-machine">รันบนเครื่อง</label>
+          <label htmlFor="cn-machine">{t('panels.newJob.machine')}</label>
           <select id="cn-machine" className="cc-sel" value={f.machineId} onChange={(e) => f.setMachineId(e.target.value)}>
-            <option value="">เครื่องนี้</option>
+            <option value="">{t('panels.newJob.thisPc')}</option>
             {f.machineChoices.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.name}
@@ -41,9 +44,9 @@ export function NewJobPanel({ cwds, command, disabledReason, onStarted, onClose,
         </div>
       )}
       <div className="cn-field" style={{ flex: '1 1 220px' }}>
-        <label htmlFor="cn-cwd">โฟลเดอร์งาน</label>
+        <label htmlFor="cn-cwd">{t('panels.newJob.folder')}</label>
         <select id="cn-cwd" className="cc-sel" value={cwd} onChange={(e) => f.setCwd(e.target.value)}>
-          {choices.length === 0 && <option value="">ยังไม่มีโฟลเดอร์ที่รู้จัก</option>}
+          {choices.length === 0 && <option value="">{t('panels.newJob.noFolders')}</option>}
           {choices.map((c) => (
             <option key={c} value={c}>
               {c}
@@ -52,7 +55,7 @@ export function NewJobPanel({ cwds, command, disabledReason, onStarted, onClose,
         </select>
       </div>
       <div className="cn-field" style={{ flex: '0 1 230px' }}>
-        <label htmlFor="cn-model">โมเดล</label>
+        <label htmlFor="cn-model">{t('panels.newJob.model')}</label>
         <select id="cn-model" className="cc-sel" value={model} onChange={(e) => f.setModel(e.target.value)}>
           {MODEL_OPTIONS.map((o) => (
             <option key={o.id} value={o.id} disabled={!!o.disabled} title={o.disabled}>
@@ -72,7 +75,7 @@ export function NewJobPanel({ cwds, command, disabledReason, onStarted, onClose,
         </select>
       </div>
       <div className="cn-field" style={{ flex: '0 1 230px' }}>
-        <label htmlFor="cn-mode">โหมด</label>
+        <label htmlFor="cn-mode">{t('panels.newJob.mode')}</label>
         <PermissionModeField
           id="cn-mode"
           value={permMode}
@@ -84,25 +87,22 @@ export function NewJobPanel({ cwds, command, disabledReason, onStarted, onClose,
         <RemoteToggle id="cn-rc" on={rc} onChange={f.setRc} />
       </div>
       <div className="cn-field" style={{ flex: '3 1 280px' }}>
-        <label htmlFor="cn-prompt">สั่งงาน</label>
-        <input
+        <label htmlFor="cn-prompt">{t('panels.newJob.task')}</label>
+        <Composer
           id="cn-prompt"
-          className="cc-input"
           value={prompt}
-          placeholder="พิมพ์งานที่จะให้ทำ"
-          onChange={(e) => f.setPrompt(e.target.value)}
+          placeholder={t('panels.newJob.placeholder')}
+          onChange={f.setPrompt}
           onPaste={f.att.onPaste}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.nativeEvent.isComposing) void start();
-          }}
+          onSubmit={() => void start()}
         />
       </div>
       <AttachButton att={f.att} />
       <button type="button" className="cc-btn is-primary" disabled={!canStart} title={disabledReason ?? undefined} onClick={() => void start()}>
-        เริ่ม
+        {t('panels.newJob.start')}
       </button>
       <button type="button" className="cc-btn" onClick={onClose}>
-        ปิด
+        {t('panels.newJob.close')}
       </button>
       <div style={{ flex: '1 1 100%' }}>
         <AttachChips att={f.att} />

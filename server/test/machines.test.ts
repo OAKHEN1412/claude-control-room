@@ -155,17 +155,17 @@ describe('reachability probe', () => {
     const calls: [string, number, number][] = [];
     const connect = async (h: string, p: number, t: number) => {
       calls.push([h, p, t]);
-      return h === '100.64.0.10';
+      return h === '192.0.2.10';
     };
     const { svc, db } = mk({ connect });
-    db.insertMachine({ id: 'a', name: 'pc-a', host: '100.64.0.10', user: '', keyPath: '', shell: 'cmd', notes: '', created: 1 });
-    db.insertMachine({ id: 'b', name: 'pc-b', host: '100.64.0.11', user: '', keyPath: '', shell: 'powershell', notes: '', created: 2 });
+    db.insertMachine({ id: 'a', name: 'pc-a', host: '192.0.2.10', user: '', keyPath: '', shell: 'cmd', notes: '', created: 1 });
+    db.insertMachine({ id: 'b', name: 'pc-b', host: '192.0.2.11', user: '', keyPath: '', shell: 'powershell', notes: '', created: 2 });
     const changes: unknown[] = [];
     svc.on('change', (v) => changes.push(v));
     await svc.probe();
     expect(calls).toEqual([
-      ['100.64.0.10', 22, 2000],
-      ['100.64.0.11', 22, 2000],
+      ['192.0.2.10', 22, 2000],
+      ['192.0.2.11', 22, 2000],
     ]);
     const l = svc.list();
     expect(l[0]).toMatchObject({ reach: 'online', lastCheck: 5_000 });
@@ -304,8 +304,8 @@ describe('tailscale peers', () => {
   const FIXTURE = JSON.stringify({
     Self: { HostName: 'DESKTOP-SELF', TailscaleIPs: ['100.9.9.9', 'fd7a::1'], OS: 'windows', Online: true },
     Peer: {
-      'nodekey:a': { HostName: 'DESKTOP-SERVER', TailscaleIPs: ['fd7a:115c::1', '100.64.0.10'], OS: 'windows', Online: true },
-      'nodekey:b': { HostName: 'Desktop-Sales2', TailscaleIPs: ['100.64.0.11'], OS: 'windows', Online: false },
+      'nodekey:a': { HostName: 'DESKTOP-SERVER', TailscaleIPs: ['fd7a:115c::1', '192.0.2.10'], OS: 'windows', Online: true },
+      'nodekey:b': { HostName: 'Desktop-B', TailscaleIPs: ['192.0.2.11'], OS: 'windows', Online: false },
       'nodekey:c': { HostName: 'v6only', TailscaleIPs: ['fd7a::5'], OS: 'linux', Online: true },
       'nodekey:d': { TailscaleIPs: ['100.1.1.1'] },
     },
@@ -313,8 +313,8 @@ describe('tailscale peers', () => {
 
   it('parses HostName lowercased, the first IPv4, os and online; Self and IPv6-only nodes are left out', () => {
     expect(parseTailscalePeers(FIXTURE)).toEqual([
-      { name: 'desktop-sales2', ip: '100.64.0.11', os: 'windows', online: false },
-      { name: 'desktop-server', ip: '100.64.0.10', os: 'windows', online: true },
+      { name: 'desktop-b', ip: '192.0.2.11', os: 'windows', online: false },
+      { name: 'desktop-server', ip: '192.0.2.10', os: 'windows', online: true },
     ]);
     expect(parseTailscalePeers('not json')).toEqual([]);
     expect(parseTailscalePeers('{}')).toEqual([]);

@@ -22,8 +22,9 @@ import {
   type MachineShell,
   type PermissionMode,
 } from '../../shared/protocol';
+import type { VarMap } from '../../shared/protocol';
 import { UPLOAD_MAX_FILES } from '../../shared/uploads';
-import { checkMachineShape } from './machines';
+import { checkMachineShapeCoded } from './machines';
 
 export const MAX_TEXT = 20_000;
 export const MAX_CWD = 1_000;
@@ -44,7 +45,7 @@ export function parseAttachments(v: unknown): string[] | string {
   return out;
 }
 
-export type Parsed = { ok: true; msg: ClientMsg } | { ok: false; error: string; reqId?: string };
+export type Parsed = { ok: true; msg: ClientMsg } | { ok: false; error: string; reqId?: string; code?: string; vars?: VarMap };
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -362,8 +363,8 @@ export function parseClientMsg(raw: unknown): Parsed {
         if (!id) return bad('machineId invalid');
         machineId = id;
       }
-      const err = checkMachineShape(raw);
-      if (err) return bad(err);
+      const err = checkMachineShapeCoded(raw);
+      if (err) return { ok: false, error: err.text, reqId, code: err.code, ...(err.vars ? { vars: err.vars } : {}) };
       const fields = {
         name: (raw.name as string).trim(),
         host: raw.host as string,

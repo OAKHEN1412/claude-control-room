@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { AGENT_PORT } from '../../shared/protocol';
 import { dataDir, fileLogger } from './cmdlog';
+import { effectiveExtraCwds, loadConfig } from './config';
 import { cachedCwds } from './cwds';
 import { WorklogDb } from './db';
 import { projectsDir as claudeProjectsDir } from './paths';
@@ -89,7 +90,7 @@ export async function runAgent(): Promise<void> {
   let runnerRef: Runner | null = null;
   const watcher = new Watcher({ keepAlive: (id) => runnerRef?.isAlive(id) === true });
   watcher.start();
-  const extra = (process.env.CR_EXTRA_CWDS ?? '').split(path.delimiter).filter((x) => x.trim() !== '');
+  const extra = effectiveExtraCwds(process.env, loadConfig().config);
   const allowedCwds = cachedCwds({ sessionCwds: () => watcher.snapshot().map((s) => s.cwd), extra });
   const extraArgs = process.env.CR_RUNNER_ARGS ? (JSON.parse(process.env.CR_RUNNER_ARGS) as string[]) : [];
   const runner = new Runner({ allowedCwds, extraArgs, claudeBin: process.env.CR_CLAUDE_BIN });

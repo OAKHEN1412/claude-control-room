@@ -7,6 +7,7 @@ import { Header } from './components/Header';
 import { NewJobPanel } from './components/NewJobPanel';
 import { BoardV2 } from './components/BoardV2';
 import { ClipWidget } from './components/ClipWidget';
+import { SetupHost } from './components/SetupHost';
 import { SessionPane } from './components/SessionPane';
 import { SavedWidget } from './components/SavedWidget';
 import { Summary } from './components/Summary';
@@ -36,21 +37,16 @@ import { EMPTY_QUEUE, collectItems, titleWithCount, updateQueue } from './queue'
 import { resolvePanes } from './selection';
 import { useServer } from './useServer';
 import { useSeams } from './canvas/useSeams';
+import { useLang, useT, type TKey } from './i18n';
 
 const STACK_QUERY = '(max-width: 899px)';
 
-const TITLES: Record<WidgetId, string> = {
-  graph: 'โครงข่ายงาน',
-  pane1: 'ช่องดูงาน 1',
-  pane2: 'ช่องดูงาน 2',
-  summary: 'สรุปและบันทึกงาน',
-  clip: 'Clip Studio',
-};
-
-const TITLES2: Record<FloatId2, string> = {
-  summary: TITLES.summary,
-  clip: TITLES.clip,
-  saved: 'งานที่บันทึกไว้',
+const TITLE_KEYS: Record<WidgetId, TKey> = {
+  graph: 'shell.widget.graph',
+  pane1: 'shell.widget.pane1',
+  pane2: 'shell.widget.pane2',
+  summary: 'shell.widget.summary',
+  clip: 'shell.widget.clip',
 };
 
 function useStacked(): boolean {
@@ -71,6 +67,8 @@ interface Panes {
 }
 
 export function App() {
+  useLang(); // re-render the whole tree when the language changes
+  const t = useT();
   const server = useServer();
   const stacked = useStacked();
 
@@ -163,7 +161,8 @@ export function App() {
   const session2 = server.sessions.find((s) => s.sessionId === id2) ?? null;
 
   const fullSession = full ? (server.sessions.find((s) => s.sessionId === full) ?? null) : null;
-  const offlineReason = server.demo ? 'โหมดตัวอย่าง — สั่งงานไม่ได้' : server.connected ? null : 'ยังไม่ได้เชื่อมต่อเซิร์ฟเวอร์';
+  const offlineReason = server.demo ? t('shell.conn.demoNoCommand') : server.connected ? null : t('shell.conn.notConnected');
+  const titles2: Record<FloatId2, string> = { summary: t(TITLE_KEYS.summary), clip: t(TITLE_KEYS.clip), saved: t('shell.widget.saved') };
 
   const setRect = useCallback((id: WidgetId, rect: Rect) => {
     setLayout((s) => ({ preset: 'custom', rects: { ...s.rects, [id]: rect } }));
@@ -249,7 +248,7 @@ export function App() {
   const widget = (id: WidgetId, children: ReactNode, className?: string) => (
     <Widget
       key={id}
-      title={TITLES[id]}
+      title={t(TITLE_KEYS[id])}
       rect={layout.rects[id]}
       z={top === id ? 3 : 1}
       stacked={stacked}
@@ -310,7 +309,7 @@ export function App() {
           seams={seamState.seams}
           windowWidth={seamState.width}
           layout={layout2}
-          titles={TITLES2}
+          titles={titles2}
           panes={{ summary: summaryEl, clip: clipEl, saved: savedEl }}
           stacked={stacked}
           onRect={setRect2}
@@ -384,6 +383,7 @@ export function App() {
           onClose={() => setFull(null)}
         />
       )}
+      <SetupHost />
     </div>
   );
 }

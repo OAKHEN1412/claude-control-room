@@ -1,4 +1,6 @@
-import { CLIP_STAGES, type ClipJob, type SessionInfo } from '../../../shared/protocol';
+import { type ClipJob, type SessionInfo } from '../../../shared/protocol';
+import { stageLabel } from '../clipForm';
+import { useT } from '../i18n';
 import './control.css';
 import './clip.css';
 
@@ -9,12 +11,13 @@ export interface ClipWidgetProps {
 
 /** Control Room widget: clip jobs with their stage, and the way into Clip Studio. */
 export function ClipWidget({ jobs, sessions }: ClipWidgetProps) {
+  const t = useT();
   return (
     <div className="cl-widget">
       <a className="cc-btn is-primary cl-open" href="/clip">
-        เปิด Clip Studio
+        {t('clip.widget.open')}
       </a>
-      {jobs.length === 0 && <p className="cc-muted">ยังไม่มีงานคลิป</p>}
+      {jobs.length === 0 && <p className="cc-muted">{t('clip.widget.empty')}</p>}
       <ul className="cl-joblist">
         {jobs.map((j) => {
           const s = sessions.find((x) => x.sessionId === j.sessionId);
@@ -22,8 +25,8 @@ export function ClipWidget({ jobs, sessions }: ClipWidgetProps) {
             <li key={j.sessionId} className={`cl-jobrow${j.ready && !j.renderRequested ? ' is-ready' : ''}`}>
               <b>{j.topic}</b>
               <span className="cc-muted">
-                {j.renderRequested ? 'สั่ง render แล้ว' : j.ready ? 'พร้อม render — รอคุณสั่ง' : `ขั้น ${j.stage + 1}/5 ${CLIP_STAGES[j.stage]}`}
-                {s ? ` · ${s.status === 'running' ? 'กำลังทำ' : s.status === 'waiting' ? 'รอคุณ' : s.status === 'done' ? 'เสร็จ' : 'ว่าง'}` : ''}
+                {j.renderRequested ? t('clip.widget.renderOrdered') : j.ready ? t('clip.form.readyWait') : t('clip.widget.stage', { n: j.stage + 1, stage: stageLabel(j.stage) })}
+                {s ? ` · ${s.status === 'running' ? t('clip.widget.running') : s.status === 'waiting' ? t('clip.widget.waiting') : s.status === 'done' ? t('clip.widget.done') : t('clip.widget.idle')}` : ''}
               </span>
             </li>
           );

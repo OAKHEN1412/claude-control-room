@@ -5,9 +5,11 @@ import { memo, type KeyboardEvent } from 'react';
 import { useState } from 'react';
 import type { RunnerState, SessionInfo } from '../../../shared/protocol';
 import type { Command } from '../components/Controls';
-import { STATUS_VAR, STATUS_WORD } from '../components/graphLayout';
+import { STATUS_VAR } from '../components/graphLayout';
+import { useT } from '../i18n';
 import { CloseIcon } from './icons';
 import { PaneView } from './PaneView';
+import { statusWord } from './canvasLayout';
 import { lastLine, type PaneNode } from './paneStore';
 
 export interface CanvasPaneProps {
@@ -35,13 +37,14 @@ const STEP = 24;
 const ARROWS: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
 
 export const CanvasPane = memo(function CanvasPane(p: CanvasPaneProps) {
+  const t = useT();
   const { pane, session } = p;
   const [token, setToken] = useState(0);
   const agent = session && pane.source?.agentId ? session.subagents.find((a) => a.id === pane.source!.agentId) : undefined;
   const status = agent ? agent.status : session?.status;
   const color = status ? STATUS_VAR[status] : 'var(--idle)';
-  const name = session ? (session.title && session.title !== '(ไม่มีชื่อ)' ? session.title : session.name) : 'ยังไม่ได้ต่อ';
-  const sub = agent ? `subagent · ${agent.description}` : session ? STATUS_WORD[session.status] : 'ลากเส้นจากบล็อก AI มาต่อ';
+  const name = session ? (session.title && session.title !== '(ไม่มีชื่อ)' ? session.title : session.name) : t('canvas.pane.unconnected');
+  const sub = agent ? `subagent · ${agent.description}` : session ? statusWord(session.status) : t('canvas.pane.dragHint');
 
   const limit = agent ? null : limitText(session, p.runner);
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -59,15 +62,15 @@ export const CanvasPane = memo(function CanvasPane(p: CanvasPaneProps) {
       data-status={status ?? undefined}
       role="group"
       tabIndex={0}
-      aria-label={`ช่องดูงาน ${name}`}
+      aria-label={t('canvas.pane.aria', { name })}
       style={{ left: pane.x, top: pane.y, width: pane.w, height: pane.h, zIndex: pane.z }}
       onKeyDown={onKeyDown}
     >
-      <div className="cv-pane-title" data-panehandle="1" title="ลากเพื่อย้าย (ลูกศร = ย้าย, Shift + ลูกศร = ปรับขนาด)">
+      <div className="cv-pane-title" data-panehandle="1" title={t('canvas.pane.dragTitle')}>
         <span className="cv-pane-dot" style={{ background: color }} aria-hidden="true" />
         <span className="cv-pane-name">{name}</span>
         <span className="cv-pane-sub">{limit ?? sub}</span>
-        <button type="button" className="cv-pane-x" data-nodrag="1" aria-label="ปิดช่อง" title="ปิดช่อง" onClick={() => p.onClose(pane.id)}>
+        <button type="button" className="cv-pane-x" data-nodrag="1" aria-label={t('canvas.pane.close')} title={t('canvas.pane.close')} onClick={() => p.onClose(pane.id)}>
           <CloseIcon />
         </button>
       </div>
@@ -75,7 +78,7 @@ export const CanvasPane = memo(function CanvasPane(p: CanvasPaneProps) {
       {p.compact ? (
         <div className="cv-pane-compact" data-panehandle="1">
           <div className="cv-pane-compact-name">{name}</div>
-          <div className="cv-pane-compact-line">{limit ?? (session ? lastLine(session) || sub : 'ยังไม่ได้ต่อ')}</div>
+          <div className="cv-pane-compact-line">{limit ?? (session ? lastLine(session) || sub : t('canvas.pane.unconnected'))}</div>
         </div>
       ) : (
         <div className="cv-pane-body">
@@ -99,8 +102,8 @@ export const CanvasPane = memo(function CanvasPane(p: CanvasPaneProps) {
         type="button"
         className="cv-pane-in"
         data-nodrag="1"
-        aria-label={session ? `จุดรับของ ${name} — กดเพื่อเปลี่ยนงานที่ต่อ` : 'จุดรับของช่อง — กดเพื่อเลือกงานที่จะต่อ'}
-        title="จุดรับ: ลากเส้นจากบล็อก AI มาวางที่นี่"
+        aria-label={session ? t('canvas.pane.inAria', { name }) : t('canvas.pane.inEmptyAria')}
+        title={t('canvas.pane.inTitle')}
         onClick={() => setToken((n) => n + 1)}
       />
       <span className="cv-pane-resize" data-resize="1" aria-hidden="true" />

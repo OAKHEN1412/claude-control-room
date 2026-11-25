@@ -2,6 +2,7 @@
 import { useRef } from 'react';
 import { formatSize } from '../../../shared/uploads';
 import type { Attachments } from './useAttachments';
+import { useT } from '../i18n';
 
 function FileIcon() {
   return (
@@ -13,19 +14,20 @@ function FileIcon() {
 }
 
 export function AttachChips({ att }: { att: Attachments }) {
+  const t = useT();
   if (att.chips.length === 0 && !att.problem) return null;
   return (
     <div className="at-wrap">
       {att.chips.length > 0 && (
-        <ul className="at-chips" aria-label="ไฟล์แนบ">
+        <ul className="at-chips" aria-label={t('shell.attach.chipsAria')}>
           {att.chips.map((c) => (
             <li key={c.key} className={`at-chip is-${c.status}`} title={c.error ?? `${c.name} (${formatSize(c.size)})`}>
               {c.previewUrl ? <img className="at-thumb" src={c.previewUrl} alt="" /> : <FileIcon />}
               <span className="at-meta">
                 <span className="at-name">{c.name}</span>
-                <span className="at-size">{c.status === 'uploading' ? 'กำลังอัปโหลด…' : c.status === 'error' ? (c.error ?? 'ไม่สำเร็จ') : formatSize(c.size)}</span>
+                <span className="at-size">{c.status === 'uploading' ? t('shell.attach.uploading') : c.status === 'error' ? (c.error ?? t('shell.attach.failed')) : formatSize(c.size)}</span>
               </span>
-              <button type="button" className="at-x" aria-label={`เอา ${c.name} ออก`} onClick={() => att.remove(c.key)}>
+              <button type="button" className="at-x" aria-label={t('shell.attach.remove', { name: c.name })} onClick={() => att.remove(c.key)}>
                 ×
               </button>
             </li>
@@ -43,6 +45,7 @@ export function AttachChips({ att }: { att: Attachments }) {
 
 /** Paperclip button + its hidden file input. Disabled (with the reason as tooltip) when attaching is off. */
 export function AttachButton({ att, off }: { att: Attachments; off?: boolean }) {
+  const t = useT();
   const input = useRef<HTMLInputElement>(null);
   const reason = att.disabled;
   return (
@@ -50,8 +53,8 @@ export function AttachButton({ att, off }: { att: Attachments; off?: boolean }) 
       <button
         type="button"
         className="cc-btn at-clip"
-        aria-label="แนบไฟล์"
-        title={reason ?? 'แนบไฟล์ (หรือลากไฟล์มาวาง / วางรูปด้วย Ctrl+V)'}
+        aria-label={t('shell.attach.clip')}
+        title={reason ?? t('shell.attach.clipTitle')}
         disabled={off || reason !== null}
         onClick={() => input.current?.click()}
       >
@@ -76,10 +79,11 @@ export function AttachButton({ att, off }: { att: Attachments; off?: boolean }) 
 
 /** Highlight shown while a file is dragged over the box. The parent needs `position: relative`. */
 export function DropOverlay({ att }: { att: Attachments }) {
+  const t = useT();
   if (!att.dragging) return null;
   return (
     <div className={`at-drop${att.disabled ? ' is-off' : ''}`} aria-hidden="true">
-      {att.disabled ?? 'วางไฟล์ที่นี่'}
+      {att.disabled ?? t('shell.attach.dropHere')}
     </div>
   );
 }

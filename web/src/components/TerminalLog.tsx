@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { TimelineEvent } from '../../../shared/protocol';
 import { formatTimeline, thoughtLine, type TermLine } from '../terminalLines';
+import { useT, type TKey } from '../i18n';
 import './terminal.css';
 
 export interface TerminalLogProps {
@@ -16,24 +17,25 @@ function hhmmss(ts: number): string {
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
-const KIND_LABEL: Record<TermLine['kind'], string> = {
-  user: 'คุณสั่ง',
-  assistant: 'Claude ตอบ',
-  tool: 'เรียกเครื่องมือ',
-  error: 'ผิดพลาด',
-  thought: 'ความคิดล่าสุด',
+const KIND_KEY: Record<TermLine['kind'], TKey> = {
+  user: 'panels.termLog.user',
+  assistant: 'panels.termLog.assistant',
+  tool: 'panels.termLog.tool',
+  error: 'panels.termLog.error',
+  thought: 'panels.termLog.thought',
 };
 
 function Line({ line, open, onToggle }: { line: TermLine; open: boolean; onToggle: () => void }) {
+  const t = useT();
   const text = open ? line.full : line.text;
   return (
     <li className={`tl-line tl-${line.kind}${line.nested ? ' is-nested' : ''}${line.tone === 'limit' ? ' tl-limit' : ''}`}>
       <span className="tl-mark" aria-hidden="true">
         {line.mark}
       </span>
-      <span className="cr-sr">{line.tone === 'limit' ? 'ติดลิมิต' : KIND_LABEL[line.kind]}: </span>
+      <span className="cr-sr">{line.tone === 'limit' ? t('panels.termLog.limit') : t(KIND_KEY[line.kind])}: </span>
       {line.collapsible ? (
-        <button type="button" className="tl-text tl-expand" aria-expanded={open} title={open ? 'ย่อ' : 'กดเพื่อดูทั้งหมด'} onClick={onToggle}>
+        <button type="button" className="tl-text tl-expand" aria-expanded={open} title={open ? t('panels.termLog.collapse') : t('panels.termLog.expand')} onClick={onToggle}>
           {text}
         </button>
       ) : (
@@ -49,7 +51,9 @@ function Line({ line, open, onToggle }: { line: TermLine; open: boolean; onToggl
 }
 
 /** The session timeline drawn like the Claude Code terminal. Presentation only; scrolling stays with the parent. */
-export function TerminalLog({ events, thought = '', emptyText = 'ยังไม่มีความเคลื่อนไหว' }: TerminalLogProps) {
+export function TerminalLog({ events, thought = '', emptyText }: TerminalLogProps) {
+  const t = useT();
+  const empty = emptyText ?? t('panels.termLog.empty');
   const [openKeys, setOpenKeys] = useState<ReadonlySet<string>>(() => new Set());
   const lines = formatTimeline(events);
   const think = thoughtLine(thought);
@@ -61,7 +65,7 @@ export function TerminalLog({ events, thought = '', emptyText = 'ยังไม
       return next;
     });
 
-  if (lines.length === 0 && !think) return <div className="tl-empty">{emptyText}</div>;
+  if (lines.length === 0 && !think) return <div className="tl-empty">{empty}</div>;
   return (
     <ol className="tl-log">
       {lines.map((l) => (

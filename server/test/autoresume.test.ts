@@ -18,7 +18,9 @@ class FakeChild extends EventEmitter implements ChildLike {
   written: string[] = [];
   constructor() {
     super();
-    this.stdin.on('data', (d: Buffer) => this.written.push(d.toString()));
+    this.stdin.on('data', (d: Buffer) => {
+      if (!d.toString().includes('"initialize"')) this.written.push(d.toString()); // the slash-menu request is not a message
+    });
   }
   kill(): boolean {
     this.killed++;

@@ -1,6 +1,13 @@
 // View model for the top-bar usage rings (pure: no DOM, `now` is passed in).
 import type { RunnerState, SessionInfo } from '../../shared/protocol';
-import { type SessionUsage, type UsageLevel, type UsageQuota, type UsageSnapshot, formatAge, formatCountdown, formatTokens, isStale, levelOf } from '../../shared/usage';
+import { type SessionUsage, type UsageLevel, type UsageQuota, type UsageSnapshot, ageMsg, countdownMsg, formatTokens, isStale, levelOf } from '../../shared/usage';
+import { t, type TKey } from './i18n';
+import { serverCode } from './i18n/serverMsg';
+
+const MONTH_KEYS: TKey[] = [
+  'shell.usage.month1', 'shell.usage.month2', 'shell.usage.month3', 'shell.usage.month4', 'shell.usage.month5', 'shell.usage.month6',
+  'shell.usage.month7', 'shell.usage.month8', 'shell.usage.month9', 'shell.usage.month10', 'shell.usage.month11', 'shell.usage.month12',
+];
 
 export interface RingView {
   key: 'five' | 'week' | 'ctx';
@@ -13,35 +20,41 @@ export interface RingView {
   lines: string[]; // popover detail
 }
 
-function clockTime(t: number, now: number): string {
-  const d = new Date(t);
+function clockTime(at: number, now: number): string {
+  const d = new Date(at);
   const p = (n: number) => String(n).padStart(2, '0');
   const hm = `${p(d.getHours())}:${p(d.getMinutes())}`;
   const n = new Date(now);
-  if (d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate()) return `วันนี้ ${hm}`;
-  const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
-  return `${d.getDate()} ${months[d.getMonth()]} ${hm}`;
+  if (d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate()) return t('shell.usage.today', { hm });
+  return `${d.getDate()} ${t(MONTH_KEYS[d.getMonth()])} ${hm}`;
 }
 
-/** "รีเซ็ต วันนี้ 17:00 · อีก 2 ชม. 15 นาที" (local time). */
+/** "Resets today 17:00 · in 2 h 15 min" (local time). */
 export function resetLine(resetsAt: number | null, now: number): string | null {
   if (resetsAt === null) return null;
-  const cd = formatCountdown(resetsAt, now);
-  return `รีเซ็ต ${clockTime(resetsAt, now)}${cd ? ` · ${cd}` : ''}`;
+  const cd = countdownMsg(resetsAt, now);
+  const cdText = cd ? serverCode(cd.code, cd.vars, cd.text) : '';
+  return `${t('shell.usage.resetAt', { time: clockTime(resetsAt, now) })}${cdText ? ` · ${cdText}` : ''}`;
+}
+
+/** "5 นาทีที่แล้ว" / "5 min ago" for the "อัปเดตล่าสุด" line, in the current language. */
+function ageText(at: number, now: number): string {
+  const a = ageMsg(at, now);
+  return serverCode(a.code, a.vars, a.text);
 }
 
 export function quotaRing(key: 'five' | 'week', q: UsageQuota | null, now: number, modelOf?: (id: string | null) => string | null): RingView {
-  const label = key === 'five' ? '5 ชม.' : 'สัปดาห์';
-  const title = key === 'five' ? 'โควตา 5 ชั่วโมง' : 'โควตารายสัปดาห์';
-  if (!q) return { key, label, title, pct: null, level: 'none', dim: true, text: '–', lines: ['ยังไม่มีข้อมูล (รอ status line ของ Claude Code อัปเดต)'] };
+  const label = key === 'five' ? t('shell.usage.window5h') : t('shell.usage.windowWeek');
+  const title = key === 'five' ? t('shell.usage.title5h') : t('shell.usage.titleWeek');
+  if (!q) return { key, label, title, pct: null, level: 'none', dim: true, text: '–', lines: [t('shell.usage.noQuota')] };
   const expired = q.resetsAt !== null && q.resetsAt <= now;
   const stale = isStale(q.updatedAt, now);
-  const lines = [`ใช้ไป ${Math.round(q.pct)}%`];
+  const lines = [t('shell.usage.used', { pct: Math.round(q.pct) })];
   const r = resetLine(q.resetsAt, now);
   if (r) lines.push(r);
   const model = q.model ?? modelOf?.(q.sessionId) ?? null;
-  if (model || q.sessionId) lines.push(`จาก: ${[model, q.sessionId ? `session ${q.sessionId.slice(0, 8)}` : null].filter(Boolean).join(' · ')}`);
-  lines.push(`อัปเดตล่าสุด ${formatAge(q.updatedAt, now)}${stale ? ' (ข้อมูลเก่า)' : ''}`);
+  if (model || q.sessionId) lines.push(`${t('shell.usage.from')} ${[model, q.sessionId ? `session ${q.sessionId.slice(0, 8)}` : null].filter(Boolean).join(' · ')}`);
+  lines.push(`${t('shell.usage.updatedAt', { age: ageText(q.updatedAt, now) })}${stale ? t('shell.usage.stale') : ''}`);
   return { key, label, title, pct: q.pct, level: levelOf(q.pct), dim: stale || expired, text: String(Math.round(q.pct)), lines };
 }
 
@@ -62,13 +75,13 @@ export function pickContext(usage: UsageSnapshot, selectedId: string | null, liv
 
 export function contextRing(session: SessionUsage | null, selectedFollowed: boolean, now: number, nameOf: (id: string) => string): RingView {
   const base = { key: 'ctx' as const, label: 'Context', title: 'Context window' };
-  if (!session || session.ctxPct === null) return { ...base, pct: null, level: 'none', dim: true, text: '–', lines: ['ยังไม่มีข้อมูล context ของ session ที่เปิดอยู่'] };
+  if (!session || session.ctxPct === null) return { ...base, pct: null, level: 'none', dim: true, text: '–', lines: [t('shell.usage.noContext')] };
   const pct = session.ctxPct;
   const stale = isStale(session.updatedAt, now);
-  const approx = session.estimated ? ' (ประมาณ)' : '';
+  const approx = session.estimated ? t('shell.usage.approx') : '';
   const lines = [`${Math.round(pct)}%${approx}`];
-  if (session.ctxUsed !== null && session.ctxWindow !== null) lines.push(`${formatTokens(session.ctxUsed)} / ${formatTokens(session.ctxWindow)} โทเค็น${approx}`);
-  lines.push(`${selectedFollowed ? 'session ที่เลือก' : 'session ล่าสุด'}: ${nameOf(session.sessionId)}${session.model ? ` · ${session.model}` : ''}`);
-  lines.push(`อัปเดตล่าสุด ${formatAge(session.updatedAt, now)}${stale ? ' (ข้อมูลเก่า)' : ''}`);
+  if (session.ctxUsed !== null && session.ctxWindow !== null) lines.push(`${t('shell.usage.tokens', { used: formatTokens(session.ctxUsed), window: formatTokens(session.ctxWindow) })}${approx}`);
+  lines.push(`${t(selectedFollowed ? 'shell.usage.selectedSession' : 'shell.usage.latestSession')}: ${nameOf(session.sessionId)}${session.model ? ` · ${session.model}` : ''}`);
+  lines.push(`${t('shell.usage.updatedAt', { age: ageText(session.updatedAt, now) })}${stale ? t('shell.usage.stale') : ''}`);
   return { ...base, pct, level: levelOf(pct), dim: stale, text: String(Math.round(pct)), lines };
 }

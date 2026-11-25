@@ -1,5 +1,7 @@
 // "+ เครื่อง" form: fields, validation (mirrors the server's rules for host / user / key path) and the message it sends.
 import type { MachineInfo, MachineShell, TailscalePeer } from './protocolNext';
+import { t } from './i18n';
+import { serverCode } from './i18n/serverMsg';
 
 export const SHELLS: readonly MachineShell[] = ['cmd', 'powershell', 'bash'];
 export const NAME_MAX = 40;
@@ -24,9 +26,9 @@ const HOST_RE = /^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$/;
 const USER_RE = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,31}$/;
 const KEY_FILE_RE = /^[A-Za-z0-9._-]+$/;
 
-export const KEY_HINT = '~/.ssh/ชื่อไฟล์คีย์ เช่น ~/.ssh/id_ed25519';
+export const keyHint = (): string => t('machine.helper.keyHint');
 
-/** Key path: empty (not configured yet) or a file directly under a .ssh folder: `~/.ssh/x`, or `C:/Users/me/.ssh/x`. */
+/** Key path: empty (not configured yet) or a file directly under a .ssh folder: `~/.ssh/x`, or `C:/Users/you/.ssh/x`. */
 export function validKeyPath(raw: string): boolean {
   const p = raw.trim().replace(/\\/g, '/');
   if (p === '') return true;
@@ -38,16 +40,16 @@ export function validKeyPath(raw: string): boolean {
 export function validateMachine(f: MachineForm): MachineFormErrors {
   const e: MachineFormErrors = {};
   const name = f.name.trim();
-  if (name === '') e.name = 'ใส่ชื่อเครื่อง';
-  else if (name.length > NAME_MAX) e.name = `ชื่อยาวเกิน ${NAME_MAX} ตัวอักษร`;
+  if (name === '') e.name = t('machine.helper.nameEmpty');
+  else if (name.length > NAME_MAX) e.name = t('machine.helper.nameTooLong', { max: NAME_MAX });
   const host = f.host.trim();
-  if (host === '') e.host = 'ใส่ที่อยู่เครื่อง (ชื่อ Tailscale หรือ IP)';
-  else if (!HOST_RE.test(host)) e.host = 'ที่อยู่ใช้ได้เฉพาะ a-z 0-9 . - และห้ามขึ้นต้นด้วย -';
+  if (host === '') e.host = t('machine.helper.hostEmpty');
+  else if (!HOST_RE.test(host)) e.host = t('machine.helper.hostInvalid');
   const user = f.user.trim();
-  if (user === '') e.user = 'ใส่ชื่อผู้ใช้ SSH';
-  else if (!USER_RE.test(user)) e.user = 'ชื่อผู้ใช้ใช้ได้เฉพาะ a-z 0-9 . _ - และห้ามขึ้นต้นด้วย - หรือ .';
-  if (!validKeyPath(f.keyPath)) e.keyPath = 'ไฟล์คีย์ต้องอยู่ในโฟลเดอร์ ~/.ssh/ (ห้ามมี .. หรือช่องว่าง)';
-  if (f.notes.length > NOTES_MAX) e.notes = `บันทึกยาวเกิน ${NOTES_MAX} ตัวอักษร`;
+  if (user === '') e.user = t('machine.helper.userEmpty');
+  else if (!USER_RE.test(user)) e.user = t('machine.helper.userInvalid');
+  if (!validKeyPath(f.keyPath)) e.keyPath = t('machine.helper.keyPathInvalid');
+  if (f.notes.length > NOTES_MAX) e.notes = t('machine.helper.notesTooLong', { max: NOTES_MAX });
   return e;
 }
 
@@ -58,7 +60,7 @@ export function applyPeer(f: MachineForm, peer: Pick<TailscalePeer, 'name' | 'ip
   return { ...f, name: peer.name, host: peer.ip };
 }
 
-/** The server returns an absolute key path (`C:\Users\x\.ssh\id_ed25519`); the UI shows `~/.ssh/id_ed25519`. */
+/** The server returns an absolute key path (`C:\Users\you\.ssh\id_ed25519`); the UI shows `~/.ssh/id_ed25519`. */
 export function shortKeyPath(p: string): string {
   const t = p.trim().replace(/\\/g, '/');
   const i = t.lastIndexOf('/.ssh/');
@@ -85,14 +87,30 @@ export function formPayload(f: MachineForm): { name: string; host: string; user:
 
 // ---- status words ----
 
-export const REACH_WORD: Record<MachineInfo['reach'], string> = { online: 'ออนไลน์', offline: 'ออฟไลน์', unknown: 'ยังไม่ทราบ' };
-export const AGENT_WORD: Record<NonNullable<MachineInfo['agentState']>, string> = { connecting: 'กำลังเชื่อมต่อ…', online: 'ดู Claude ได้', error: 'เชื่อมต่อไม่ได้' };
+// Getters: each access resolves the text in the current language, so nothing is translated at module load.
+export const REACH_WORD: Record<MachineInfo['reach'], string> = {
+  get online() { return t('machine.helper.reachOnline'); },
+  get offline() { return t('machine.helper.reachOffline'); },
+  get unknown() { return t('machine.helper.reachUnknown'); },
+};
+export const AGENT_WORD: Record<NonNullable<MachineInfo['agentState']>, string> = {
+  get connecting() { return t('machine.helper.agentConnecting'); },
+  get online() { return t('machine.helper.agentOnline'); },
+  get error() { return t('machine.helper.agentError'); },
+};
 
 /** One line for the machine node: the agent's state, or '' when the machine does not run one. */
-export function agentLine(m: Pick<MachineInfo, 'agent' | 'agentState' | 'agentError'>): string {
+export function agentLine(m: Pick<MachineInfo, 'agent' | 'agentState' | 'agentError' | 'agentCode' | 'agentVars'>): string {
   if (!m.agent) return '';
   const st = m.agentState ?? 'connecting';
-  return st === 'error' && m.agentError ? `${AGENT_WORD.error}: ${m.agentError}` : AGENT_WORD[st];
+  if (st !== 'error' || !m.agentError) return AGENT_WORD[st];
+  // The server sends the error as a code + vars; the Thai agentError is the fallback when the code is unknown.
+  return t('machine.helper.agentErrorLine', { error: serverCode(m.agentCode, m.agentVars, m.agentError) });
 }
 
-export const SSH_WORD: Record<MachineInfo['ssh'], string> = { ok: 'SSH ใช้ได้', fail: 'SSH ไม่ผ่าน', untested: 'ยังไม่ทดสอบ', not_configured: 'ยังไม่ตั้งค่า' };
+export const SSH_WORD: Record<MachineInfo['ssh'], string> = {
+  get ok() { return t('machine.helper.sshOk'); },
+  get fail() { return t('machine.helper.sshFail'); },
+  get untested() { return t('machine.helper.sshUntested'); },
+  get not_configured() { return t('machine.helper.sshNotConfigured'); },
+};

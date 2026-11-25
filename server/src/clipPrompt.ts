@@ -3,6 +3,7 @@ import type { ClipSettings, ClipStartInput } from '../../shared/protocol';
 import { CLIP_VOICE_MODEL } from '../../shared/protocol';
 import type { OurStyle } from './ourStyles';
 import type { LemoStyle } from './styles';
+import { buildClipPromptEn } from './clipPromptEn';
 
 export type ResolvedStyle = { kind: 'ours'; style: OurStyle } | { kind: 'lemo'; style: LemoStyle };
 
@@ -51,12 +52,13 @@ export interface BuildPromptInput {
 }
 
 export function buildClipPrompt({ req, style, cwd }: BuildPromptInput): string {
+  if (req.settings.lang === 'en') return buildClipPromptEn({ req, style, cwd });
   const { settings } = req;
   const points = req.points
     .split(/[,\n،]/)
     .map((p) => p.trim())
     .filter(Boolean);
-  const noSubagent = style.kind === 'ours' && style.style.id === 'freshy';
+  const noSubagent = style.kind === 'ours' && style.style.noSubagents === true;
   const L: string[] = [];
 
   L.push('คุณกำลังทำคลิปวิดีโอด้วย HyperFrames (HTML เป็นวิดีโอ) ตาม workflow คลิปเดิมของเรา. ทำงานในโฟลเดอร์นี้:');
@@ -88,7 +90,7 @@ export function buildClipPrompt({ req, style, cwd }: BuildPromptInput): string {
   if (settings.voice && req.voiceId) {
     L.push(`เสียงพากย์: ElevenLabs model ${CLIP_VOICE_MODEL}, voice ID ${req.voiceId}${settings.lang === 'th' ? ', language_code th' : ''}.`);
     L.push('- เขียนบทพากย์ให้ไหลเป็นเทคเดียว; ตัด scene ตาม timestamp ของคำ (endpoint /v1/text-to-speech/<voice>/with-timestamps).');
-    L.push('- key: `secrets get tools/elevenlabs.enc` (แยกเอาค่า sk_ ส่งเข้า env ของสคริปต์). ห้ามอ่าน key จากไฟล์ .env ห้ามพิมพ์หรือเขียน key ลงไฟล์.');
+    L.push('- key: อยู่ในตัวแปรสภาพแวดล้อม `ELEVENLABS_API_KEY` ของโปรเซสนี้อยู่แล้ว (อ่านจาก os.environ / process.env, ส่งเป็น header `xi-api-key`). ห้ามอ่าน key จากไฟล์ .env ห้ามพิมพ์หรือเขียน key ลงไฟล์.');
     L.push('- ส่ง JSON เป็น UTF-8 ผ่านไฟล์ (Python ensure_ascii=False) ไม่ใช้ curl -d กับข้อความไทย. เรียก API ทีละครั้ง (ขนานแล้วได้ 429).');
   } else {
     L.push('ไม่มีเสียงพากย์ ใช้ข้อความบนจอ/เพลง/เสียงประกอบแทน (ห้ามเรียก ElevenLabs).');

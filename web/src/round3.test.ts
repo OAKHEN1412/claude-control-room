@@ -292,12 +292,12 @@ describe('saved list', () => {
   });
   it('resume form is prefilled from the saved row', () => {
     expect(resumeDefaults({ model: 'claude-sonnet-5-5', effort: 'medium' })).toEqual({ model: 'sonnet', effort: 'medium' });
-    expect(resumeDefaults({ model: null, effort: 'weird' })).toEqual({ model: 'opus', effort: 'high' });
+    expect(resumeDefaults({ model: null, effort: 'weird' })).toEqual({ model: 'opus', effort: 'medium' });
   });
 });
 
 describe('machine form validation', () => {
-  const ok: MachineForm = { name: 'desktop-server', host: '100.88.12.4', user: 'admin', keyPath: '~/.ssh/id_ed25519', shell: 'cmd', notes: '' };
+  const ok: MachineForm = { name: 'desktop-server', host: '198.51.100.4', user: 'admin', keyPath: '~/.ssh/id_ed25519', shell: 'cmd', notes: '' };
   it('accepts a good form and an empty key path (not configured yet)', () => {
     expect(validateMachine(ok)).toEqual({});
     expect(isValidMachine({ ...ok, keyPath: '' })).toBe(true);
@@ -312,7 +312,7 @@ describe('machine form validation', () => {
     for (const user of ['-x', 'a b', 'a;b', 'a@b', '.dot']) expect(validateMachine({ ...ok, user }).user, user).toBeTruthy();
   });
   it('the key must be a file directly under a .ssh folder', () => {
-    for (const k of ['~/.ssh/id_ed25519', '~\\.ssh\\id_rsa', 'C:\\Users\\Demo\\.ssh\\key.pem', '$HOME/.ssh/k', '/home/u/.ssh/k']) expect(validKeyPath(k), k).toBe(true);
+    for (const k of ['~/.ssh/id_ed25519', '~\\.ssh\\id_rsa', 'C:\\Users\\you\\.ssh\\key.pem', '$HOME/.ssh/k', '/home/u/.ssh/k']) expect(validKeyPath(k), k).toBe(true);
     for (const k of ['~/id_rsa', '~/.ssh/../etc/passwd', '~/.ssh/sub/key', '/etc/ssh/key', '~/.ssh/a b', '~/.ssh/', 'C:/keys/x', '~/.ssh/k;ls']) expect(validKeyPath(k), k).toBe(false);
   });
   it('limits name and notes length', () => {
@@ -320,11 +320,11 @@ describe('machine form validation', () => {
     expect(validateMachine({ ...ok, notes: 'x'.repeat(301) }).notes).toBeTruthy();
   });
   it('picking a Tailscale peer prefills name and host only', () => {
-    const f = applyPeer({ ...ok, user: 'me', name: '', host: '' }, { name: 'laptop-office', ip: '100.1.2.3' });
-    expect(f).toMatchObject({ name: 'laptop-office', host: '100.1.2.3', user: 'me' });
+    const f = applyPeer({ ...ok, user: 'me', name: '', host: '' }, { name: 'laptop-a', ip: '100.1.2.3' });
+    expect(f).toMatchObject({ name: 'laptop-a', host: '100.1.2.3', user: 'me' });
   });
   it('the payload is trimmed and drops empty notes', () => {
-    expect(formPayload({ ...ok, name: ' a ', notes: '  ' })).toEqual({ name: 'a', host: '100.88.12.4', user: 'admin', keyPath: '~/.ssh/id_ed25519', shell: 'cmd' });
+    expect(formPayload({ ...ok, name: ' a ', notes: '  ' })).toEqual({ name: 'a', host: '198.51.100.4', user: 'admin', keyPath: '~/.ssh/id_ed25519', shell: 'cmd' });
     expect(formPayload({ ...ok, notes: ' n ' }).notes).toBe('n');
   });
 });

@@ -4,7 +4,9 @@ import type { MachineAttachment, MachineInfo, TailscalePeer } from '../protocolN
 import { modeBadges } from '../control';
 import type { CharView } from '../useCharacter';
 import { Character } from '../components/Character';
-import { STATUS_WORD, badgeText, shortModel } from '../components/graphLayout';
+import { badgeText, shortModel } from '../components/graphLayout';
+import { useT } from '../i18n';
+import { serverText } from '../i18n/serverMsg';
 import {
   CARD_H,
   CARD_W,
@@ -19,6 +21,7 @@ import {
   unionBox,
   layoutCanvas,
   modelWord,
+  statusWord,
   type Box,
   type Point,
   type StoredPositions,
@@ -106,7 +109,7 @@ export interface CanvasProps {
 const DRAG_PX = 4;
 const MODEL_DX = 64;
 const AGENTS_DX = CARD_W - 64;
-const validTitle = (t: string): boolean => !!t && t !== '(ไม่มีชื่อ)';
+const validTitle = (s: string): boolean => !!s && s !== '(ไม่มีชื่อ)';
 
 // ---- nodes (memoised on primitives, so dragging one node does not re-render the others) ----
 
@@ -130,8 +133,9 @@ interface SessionNodeProps {
 }
 
 const SessionNode = memo(function SessionNode(p: SessionNodeProps) {
-  const word = STATUS_WORD[p.status];
-  const label = `งาน ${p.title} ${word}${p.limit ? ` ${p.limit}` : ''}${p.asks > 0 ? ` มีคำถามรอ ${p.asks}` : ''}`;
+  const t = useT();
+  const word = statusWord(p.status);
+  const label = `${t('canvas.canvas.sessionLabel', { title: p.title, status: word })}${p.limit ? ` ${p.limit}` : ''}${p.asks > 0 ? ` ${t('canvas.canvas.asks', { n: p.asks })}` : ''}`;
   return (
     <div
       className={`cv-node${p.selected ? ' is-selected' : ''}${p.hot ? ' is-hot' : ''}`}
@@ -164,8 +168,8 @@ const SessionNode = memo(function SessionNode(p: SessionNodeProps) {
         type="button"
         className={`cv-plus${p.wired ? ' is-wired' : ''}`}
         data-nodrag="1"
-        aria-label={`เพิ่มช่องดูงานที่ต่อกับ ${p.title}`}
-        title="เพิ่มช่องดูงานที่ต่อกับงานนี้ (หรือลากจุดขวาไปวางที่ช่อง)"
+        aria-label={t('canvas.canvas.addPaneFor', { title: p.title })}
+        title={t('canvas.canvas.addPaneForHint')}
         onClick={() => p.onPlus(p.sid)}
       >
         +
@@ -248,6 +252,7 @@ interface MachineProps {
 }
 
 const MachineNode = memo(function MachineNode({ box, name, char, onCharClick }: MachineProps) {
+  const t = useT();
   const asking = char.state === 'asking';
   return (
     <div
@@ -256,7 +261,7 @@ const MachineNode = memo(function MachineNode({ box, name, char, onCharClick }: 
       data-kind="machine"
       style={{ left: box.x, top: box.y, width: box.w, height: box.h }}
       role="group"
-      aria-label={`เครื่อง ${name}`}
+      aria-label={t('canvas.canvas.machineAria', { name })}
     >
       <div className="cv-machine-char">
         {asking ? (
@@ -265,8 +270,8 @@ const MachineNode = memo(function MachineNode({ box, name, char, onCharClick }: 
             className="cg-char-btn"
             data-nodrag="1"
             onClick={onCharClick}
-            aria-label={`${char.label} — กดเพื่อเปิดคำถาม`}
-            title="กดเพื่อเปิดคำถามที่รออยู่"
+            aria-label={t('canvas.canvas.askAria', { label: char.label })}
+            title={t('canvas.canvas.askTitle')}
           >
             <Character state={char.state} />
           </button>
@@ -379,6 +384,7 @@ export function Canvas({
   onToggleSaved,
   reveal = null,
 }: CanvasProps) {
+  const t = useT();
   const rootRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [view, setView] = useState<View>({ x: 48, y: 48, k: 1 });
@@ -784,7 +790,7 @@ export function Canvas({
     auto.current = true;
     if (nextView && sm.length === 0) setView(fitView(fitBoundsOf(full, panesNext), s, { insetRight: insetRef.current, padTop: 40, padBottom: 40 }));
     else if (nextView) setView(nextView);
-    showToast('จัดเรียงใหม่แล้ว', { x: e.clientX, y: e.clientY + 36 });
+    showToast(t('canvas.canvas.rearranged'), { x: e.clientX, y: e.clientY + 36 });
   };
 
   const onPlus = useCallback((sid: string) => void addConnectedPane({ sessionId: sid, agentId: null }), [addConnectedPane]);
@@ -937,11 +943,11 @@ export function Canvas({
 
   const sendWire = async (cmd: Parameters<NonNullable<typeof command>>[0], at: { x: number; y: number }) => {
     if (!command) {
-      showToast(offlineReason ?? 'ยังสั่งงานไม่ได้', at);
+      showToast(offlineReason ?? t('canvas.canvas.cantCommand'), at);
       return;
     }
     const r = await command(cmd);
-    if (!r.ok) showToast(r.error ?? 'เชื่อมไม่สำเร็จ ลองอีกครั้ง', at);
+    if (!r.ok) showToast(serverText(r) || t('canvas.canvas.linkFailed'), at);
   };
 
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
@@ -1148,7 +1154,7 @@ export function Canvas({
       ref={rootRef}
       className={`cv-root lod-${lod}${panning ? ' is-panning' : ''}${moving ? ' is-moving' : ''}${wireDrag ? ' is-wiring' : ''}`}
       role="region"
-      aria-label="โครงข่ายงาน"
+      aria-label={t('canvas.canvas.region')}
       style={{ backgroundSize: `${gridSize}px ${gridSize}px`, backgroundPosition: `${view.x}px ${view.y}px` }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -1252,9 +1258,9 @@ export function Canvas({
                   status={null}
                   selected={false}
                   inner={modelWord(s.model)}
-                  label={m ?? 'ไม่ทราบโมเดล'}
+                  label={m ?? t('canvas.canvas.unknownModel')}
                   sub={s.effort ?? ''}
-                  aria={`โมเดล ${m ?? 'ไม่ทราบ'}${s.effort ? ` effort ${s.effort}` : ''}`}
+                  aria={s.effort ? t('canvas.canvas.modelEffortAria', { model: m ?? t('canvas.canvas.unknown'), effort: s.effort }) : t('canvas.canvas.modelAria', { model: m ?? t('canvas.canvas.unknown') })}
                 />
               );
             }
@@ -1270,9 +1276,9 @@ export function Canvas({
                   status={null}
                   selected={false}
                   inner={b.expanded ? '−' : `+${b.count}`}
-                  label={b.expanded ? 'ซ่อนตัวที่เก่า' : `อีก ${b.count} ตัว`}
+                  label={b.expanded ? t('canvas.canvas.hideOlder') : t('canvas.canvas.moreCount', { count: b.count })}
                   sub=""
-                  aria={b.expanded ? 'ซ่อนงานย่อยที่เก่า' : `ดูงานย่อยที่เหลืออีก ${b.count} ตัว`}
+                  aria={b.expanded ? t('canvas.canvas.hideOlderAgents') : t('canvas.canvas.showMoreAgents', { count: b.count })}
                 />
               );
             }
@@ -1291,7 +1297,7 @@ export function Canvas({
                 inner=""
                 label={a.description}
                 sub={shortModel(a.model) ?? ''}
-                aria={`งานย่อย ${a.description} ${STATUS_WORD[a.status]}${a.thought ? ` — ${a.thought}` : ''}`}
+                aria={`${t('canvas.canvas.agentAria', { desc: a.description, status: statusWord(a.status) })}${a.thought ? ` — ${a.thought}` : ''}`}
               />
             );
           });
@@ -1333,7 +1339,7 @@ export function Canvas({
                   data-chip={w.id}
                   style={{ left: w.mid.x, top: w.mid.y }}
                   title={chip.title}
-                  aria-label={`เส้นส่งคำตอบ ${nameOf(w.link.from)} ไป ${nameOf(w.link.to)}: ${chip.title}`}
+                  aria-label={t('canvas.canvas.linkAria', { from: nameOf(w.link.from), to: nameOf(w.link.to), title: chip.title })}
                   onClick={() => setMenu(menu?.kind === 'link' && menu.id === w.id ? null : { kind: 'link', id: w.id })}
                 >
                   {chip.text}
@@ -1347,8 +1353,8 @@ export function Canvas({
                 className={`cv-chip is-ssh${menu?.kind === 'attach' && menu.sessionId === w.sessionId && menu.machineId === w.machineId ? ' is-open' : ''}`}
                 data-nodrag="1"
                 style={{ left: w.mid.x, top: w.mid.y }}
-                title="งานนี้ต่อกับเครื่องนี้ผ่าน SSH — กดเพื่อยกเลิกเชื่อม"
-                aria-label={`SSH ${nameOf(w.sessionId)} ไป ${machineById.get(w.machineId)?.name ?? ''}`}
+                title={t('canvas.canvas.sshTitle')}
+                aria-label={t('canvas.canvas.sshAria', { from: nameOf(w.sessionId), to: machineById.get(w.machineId)?.name ?? '' })}
                 onClick={() => setMenu(menu?.kind === 'attach' && menu.sessionId === w.sessionId && menu.machineId === w.machineId ? null : { kind: 'attach', sessionId: w.sessionId, machineId: w.machineId })}
               >
                 SSH
@@ -1363,8 +1369,8 @@ export function Canvas({
             className="cv-wire-x"
             data-nodrag="1"
             style={{ left: selectedMid.x, top: selectedMid.y }}
-            aria-label="ลบเส้นเชื่อม"
-            title="ลบเส้นเชื่อม (Delete)"
+            aria-label={t('canvas.canvas.deleteWire')}
+            title={t('canvas.canvas.deleteWireHint')}
             onClick={() => {
               commitPanes(disconnectPane(panesRef.current, selectedWire.paneId));
               setSelWire(null);
@@ -1379,28 +1385,28 @@ export function Canvas({
         </svg>
       </div>
 
-      {placed.empty && <div className="cv-empty">ไม่พบ session ที่เปิดอยู่</div>}
+      {placed.empty && <div className="cv-empty">{t('canvas.canvas.noSession')}</div>}
 
       {dock && (
-        <div className="cv-chrome cv-dock" data-chrome="1" role="group" aria-label="ช่องที่แสดงบนหน้าจอ">
+        <div className="cv-chrome cv-dock" data-chrome="1" role="group" aria-label={t('canvas.canvas.dockAria')}>
           {dock}
         </div>
       )}
-      <div className="cv-chrome cv-zoom" data-chrome="1" role="group" aria-label="ซูมโครงข่าย">
-        <button type="button" className="cv-btn" aria-label="ซูมออก" title="ซูมออก" disabled={view.k <= MIN_ZOOM} onClick={() => zoomBy(1 / 1.25)}>
+      <div className="cv-chrome cv-zoom" data-chrome="1" role="group" aria-label={t('canvas.canvas.zoomAria')}>
+        <button type="button" className="cv-btn" aria-label={t('canvas.canvas.zoomOut')} title={t('canvas.canvas.zoomOut')} disabled={view.k <= MIN_ZOOM} onClick={() => zoomBy(1 / 1.25)}>
           −
         </button>
         <span className="cv-zoomval" aria-live="off">
           {zoomPct(view.k)}
         </span>
-        <button type="button" className="cv-btn" aria-label="ซูมเข้า" title="ซูมเข้า" disabled={view.k >= MAX_ZOOM} onClick={() => zoomBy(1.25)}>
+        <button type="button" className="cv-btn" aria-label={t('canvas.canvas.zoomIn')} title={t('canvas.canvas.zoomIn')} disabled={view.k >= MAX_ZOOM} onClick={() => zoomBy(1.25)}>
           +
         </button>
         <button
           type="button"
           className="cv-btn"
-          aria-label="พอดีหน้าจอ"
-          title="พอดีหน้าจอ"
+          aria-label={t('canvas.canvas.fit')}
+          title={t('canvas.canvas.fit')}
           onClick={() => {
             auto.current = true;
             fit();
@@ -1408,21 +1414,21 @@ export function Canvas({
         >
           <FitIcon />
         </button>
-        <button type="button" className="cv-btn cv-rearrange" aria-label="จัดเรียงใหม่" title="จัดเรียงใหม่ (ล้างตำแหน่งที่ลากไว้ แล้วจัดไม่ให้ทับกัน)" onClick={relayout}>
+        <button type="button" className="cv-btn cv-rearrange" aria-label={t('canvas.canvas.rearrange')} title={t('canvas.canvas.rearrangeHint')} onClick={relayout}>
           <RearrangeIcon />
         </button>
         <span className="cv-sep" aria-hidden="true" />
-        <button type="button" className="cv-btn cv-addpane" aria-label="เพิ่มช่องดูงาน" title="เพิ่มช่องดูงาน (แล้วลากเส้นจากบล็อก AI มาต่อ)" onClick={addEmptyPane}>
+        <button type="button" className="cv-btn cv-addpane" aria-label={t('canvas.canvas.addPane')} title={t('canvas.canvas.addPaneHint')} onClick={addEmptyPane}>
           <PaneAddIcon />
-          <span>ช่อง</span>
+          <span>{t('canvas.canvas.paneShort')}</span>
         </button>
         <span className="cv-sep" aria-hidden="true" />
         <button
           type="button"
           className="cv-btn cv-addai"
-          aria-label="เพิ่มงาน AI"
+          aria-label={t('canvas.canvas.addAi')}
           aria-pressed={popover === 'ai'}
-          title="เพิ่มงาน AI ใหม่ (เปิดงานใหม่บนเว็บ)"
+          title={t('canvas.canvas.addAiHint')}
           onClick={() => setPopover((p) => (p === 'ai' ? null : 'ai'))}
         >
           <AgentIcon size={18} />
@@ -1431,16 +1437,16 @@ export function Canvas({
         <button
           type="button"
           className="cv-btn cv-addmachine"
-          aria-label="เพิ่มเครื่อง"
+          aria-label={t('canvas.canvas.addMachine')}
           aria-pressed={popover === 'machine'}
-          title="เพิ่มเครื่องอื่นที่สั่งงานผ่าน SSH"
+          title={t('canvas.canvas.addMachineHint')}
           onClick={() => setPopover((p) => (p === 'machine' ? null : 'machine'))}
         >
           <ComputerIcon size={18} />
-          <span>+ เครื่อง</span>
+          <span>{t('canvas.canvas.addMachineShort')}</span>
         </button>
         {onToggleSaved && (
-          <button type="button" className="cv-btn cv-saved" aria-label="งานที่บันทึกไว้" aria-pressed={savedOpen} title="งานที่บันทึกไว้ (เปิดทำงานต่อวันอื่น)" onClick={onToggleSaved}>
+          <button type="button" className="cv-btn cv-saved" aria-label={t('canvas.canvas.saved')} aria-pressed={savedOpen} title={t('canvas.canvas.savedHint')} onClick={onToggleSaved}>
             <ClockIcon />
           </button>
         )}
@@ -1495,7 +1501,7 @@ export function Canvas({
       {toast && (
         <div className="cv-toast cv-chrome" data-chrome="1" role="alert" style={{ left: nudgeCentre(toast.x, 340, seams, size.w), top: toast.y }}>
           <span>{toast.text}</span>
-          <button type="button" className="cv-pane-x" aria-label="ปิดข้อความ" onClick={() => setToast(null)}>
+          <button type="button" className="cv-pane-x" aria-label={t('canvas.canvas.closeToast')} onClick={() => setToast(null)}>
             <CloseIcon />
           </button>
         </div>

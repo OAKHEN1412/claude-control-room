@@ -8,6 +8,7 @@ export type Command =
   | { kind: 'attach'; id: string }
   | { kind: 'resume'; id: string; model?: string; effort?: EffortLevel }
   | { kind: 'takeover'; id: string; yes: boolean }
+  | { kind: 'update'; tag?: string; latest: boolean; skills: boolean; dryRun: boolean }
   | { kind: 'help' };
 
 export interface Parsed {
@@ -26,6 +27,8 @@ export const USAGE = `cr — คุมงาน Claude Control Room จาก te
   cr attach <id>                        ต่อเข้างานที่เปิดอยู่ (พิมพ์ข้อความ = ส่งเข้างาน)
   cr resume <sessionId>                 เอา session เก่ามาเป็นงานที่คุมได้ทั้งเว็บและ terminal แล้วต่อ
   cr takeover <id> [-y]                 ยึด session ที่เปิดอยู่ใน terminal: ปิด claude ตัวนั้น (ต้องว่าง) แล้วย้ายมาคุม (ถามยืนยัน, -y = ไม่ถาม) แล้วต่อ
+  cr update [--latest | --tag vX.Y.Z] [--skills] [--dry-run]
+                                        อัปเดตเซิร์ฟเวอร์เป็น release tag (ใช้ได้เฉพาะการติดตั้งที่มี .cr-install; ไม่ต้องเปิดเซิร์ฟเวอร์)
 
   id ใช้แค่ตัวหน้า ๆ ได้ (อย่างน้อย 4 ตัว)   --port N หรือ CR_PORT = พอร์ตของเซิร์ฟเวอร์ (ค่าตั้งต้น ${SERVER_PORT})
   ในโหมด attach: เลข = ตอบคำถาม · /stop หยุดงาน · /close ปิดงาน · /detach หรือ Ctrl+C ออกโดยงานยังรันต่อ · /help`;
@@ -44,8 +47,8 @@ interface Flags {
   rest: string[];
 }
 
-const VALUE_FLAGS = new Set(['--cwd', '--model', '--effort', '--port', '--machine']);
-const BOOL_FLAGS = new Set(['--all', '-a', '--no-attach', '--help', '-h', '--yes', '-y']);
+const VALUE_FLAGS = new Set(['--cwd', '--model', '--effort', '--port', '--machine', '--tag']);
+const BOOL_FLAGS = new Set(['--all', '-a', '--no-attach', '--help', '-h', '--yes', '-y', '--latest', '--skills', '--dry-run']);
 
 function splitFlags(args: string[]): Flags | string {
   const f: Flags = { values: new Map(), bools: new Set(), rest: [] };
@@ -111,6 +114,22 @@ export function parseArgs(argv: string[], cwd: string, env: Record<string, strin
     case 'takeover': {
       if (args.length !== 1) return { ok: false, error: 'ใช้: cr takeover <id>' };
       return wrap({ kind: 'takeover', id: args[0], yes: f.bools.has('--yes') || f.bools.has('-y') });
+    }
+    case 'update': {
+      const usage = 'ใช้: cr update [--latest | --tag vX.Y.Z] [--skills] [--dry-run]';
+      if (args.length !== 0) return { ok: false, error: usage };
+      const tag = f.values.get('--tag');
+      const latest = f.bools.has('--latest');
+      if (tag !== undefined && latest) return { ok: false, error: 'ใส่ --tag หรือ --latest อย่างใดอย่างหนึ่ง' };
+      if (tag === undefined && !latest) return { ok: false, error: `ต้องระบุ --latest หรือ --tag vX.Y.Z (${usage})` };
+      if (tag !== undefined && !/^v\d+\.\d+\.\d+$/.test(tag)) return { ok: false, error: `tag ไม่ถูกต้อง: ${tag} (ต้องเป็นรูปแบบ vX.Y.Z)` };
+      return wrap({
+        kind: 'update',
+        ...(tag !== undefined ? { tag } : {}),
+        latest,
+        skills: f.bools.has('--skills'),
+        dryRun: f.bools.has('--dry-run'),
+      });
     }
     case 'new': {
       const model = f.values.get('--model') ?? DEFAULT_MODEL;

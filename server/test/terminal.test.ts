@@ -15,7 +15,7 @@ import { TITLE_MAX, TerminalLauncher, buildCmdLaunch, buildWtLaunch, cleanTitle,
 import { Watcher } from '../src/watcher';
 
 const SID = '123e4567-e89b-42d3-a456-426614174000';
-const req = (over: Partial<TerminalRequest> = {}): TerminalRequest => ({ sessionId: SID, title: 'งานทดสอบ', cwd: 'C:\\Users\\x\\proj', ...over });
+const req = (over: Partial<TerminalRequest> = {}): TerminalRequest => ({ sessionId: SID, title: 'งานทดสอบ', cwd: 'C:\\Users\\you\\proj', ...over });
 const cmd = crCommand('C:\\Program Files\\nodejs\\node.exe', 'C:\\cr\\cli\\src\\cr.ts', SID, 8790);
 
 describe('open_terminal command', () => {
@@ -32,7 +32,7 @@ describe('launch arguments', () => {
   it('wt.exe: new window, title, start dir, then the cr command; every value is its own argument', () => {
     const l = buildWtLaunch(req(), cmd);
     expect(l.file).toBe('wt.exe');
-    expect(l.args).toEqual(['-w', 'new', '--title', 'งานทดสอบ', '-d', 'C:\\Users\\x\\proj', 'C:\\Program Files\\nodejs\\node.exe', 'C:\\cr\\cli\\src\\cr.ts', 'attach', SID, '--port', '8790']);
+    expect(l.args).toEqual(['-w', 'new', '--title', 'งานทดสอบ', '-d', 'C:\\Users\\you\\proj', 'C:\\Program Files\\nodejs\\node.exe', 'C:\\cr\\cli\\src\\cr.ts', 'attach', SID, '--port', '8790']);
   });
 
   it('the title cannot inject a wt command (;) or a cmd one (& | < > ^ %), and is bounded', () => {
@@ -59,7 +59,7 @@ describe('launch arguments', () => {
   it('cmd fallback: start "<title>" /D <cwd> <command>', () => {
     const l = buildCmdLaunch(req(), cmd);
     expect(l.file).toBe('cmd.exe');
-    expect(l.args.slice(0, 5)).toEqual(['/c', 'start', 'งานทดสอบ', '/D', 'C:\\Users\\x\\proj']);
+    expect(l.args.slice(0, 5)).toEqual(['/c', 'start', 'งานทดสอบ', '/D', 'C:\\Users\\you\\proj']);
     expect(l.args.slice(5)).toEqual(cmd);
   });
 

@@ -8,7 +8,7 @@ import { spawn as nodeSpawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import net from 'node:net';
 import { WebSocket } from 'ws';
-import { AGENT_PORT, AGENT_TOKEN_HEADER, type AgentState, type ClientMsg, type RunnerState, type SavedSession, type ServerMsg, type SessionInfo } from '../../shared/protocol';
+import { AGENT_PORT, AGENT_TOKEN_HEADER, type AgentState, type ClientMsg, type RunnerState, type SavedSession, type ServerMsg, type SessionInfo, type VarMap } from '../../shared/protocol';
 import { keyUnderSsh } from './machines';
 import { CommandError } from './runner';
 
@@ -71,6 +71,8 @@ export interface RemoteDeps {
 export interface RemoteStatus {
   state: AgentState;
   error?: string;
+  code?: string; // srv.* code of `error`
+  vars?: VarMap; // values for the {name} placeholders of `code`
   cwds?: string[];
 }
 
@@ -161,6 +163,8 @@ class Conn {
   cwds: string[] = [];
   state: AgentState = 'connecting';
   error: string | undefined;
+  errorCode: string | undefined;
+  errorVars: VarMap | undefined;
   child: TunnelChild | null = null;
   ws: WsLike | null = null;
   timer: NodeJS.Timeout | null = null;
@@ -243,12 +247,20 @@ export class RemoteHub extends EventEmitter {
   }
 
   private statusOf(c: Conn): RemoteStatus {
-    return { state: c.state, ...(c.error ? { error: c.error } : {}), ...(c.cwds.length ? { cwds: c.cwds } : {}) };
+    return {
+      state: c.state,
+      ...(c.error ? { error: c.error } : {}),
+      ...(c.errorCode ? { code: c.errorCode } : {}),
+      ...(c.errorVars ? { vars: c.errorVars } : {}),
+      ...(c.cwds.length ? { cwds: c.cwds } : {}),
+    };
   }
 
-  private setState(c: Conn, state: AgentState, error?: string): void {
+  private setState(c: Conn, state: AgentState, error?: string, code?: string, vars?: VarMap): void {
     c.state = state;
     c.error = state === 'error' ? error : undefined;
+    c.errorCode = state === 'error' ? code : undefined;
+    c.errorVars = state === 'error' ? vars : undefined;
     this.emit('status', c.target.id, this.statusOf(c));
   }
 
@@ -280,7 +292,7 @@ export class RemoteHub extends EventEmitter {
     }
     for (const [, p] of c.pending) {
       clearTimeout(p.timer);
-      p.resolve({ type: 'ack', serverTime: this.now(), reqId: '', ok: false, error: 'ขาดการเชื่อมต่อกับเครื่องปลายทาง' });
+      p.resolve({ type: 'ack', serverTime: this.now(), reqId: '', ok: false, error: 'ขาดการเชื่อมต่อกับเครื่องปลายทาง', code: 'srv.remote.disconnected' });
     }
     c.pending.clear();
     this.clearView(c);
@@ -298,10 +310,10 @@ export class RemoteHub extends EventEmitter {
     if (hadSaved) this.emit('saved');
   }
 
-  private retry(c: Conn, why: string): void {
+  private retry(c: Conn, why: string, code?: string, vars?: VarMap): void {
     if (c.stopped || this.stoppedAll) return;
     this.teardown(c);
-    this.setState(c, 'error', why);
+    this.setState(c, 'error', why, code, vars);
     const wait = c.delay;
     c.delay = Math.min(c.delay * 2, this.d.backoffMaxMs ?? BACKOFF_MAX_MS);
     c.timer = setTimeout(() => void this.connect(c), wait);
@@ -318,12 +330,12 @@ export class RemoteHub extends EventEmitter {
     try {
       token = await this.d.getToken(t.id);
     } catch (e) {
-      if (alive()) this.retry(c, `อ่าน token ไม่ได้: ${errText(e)}`);
+      if (alive()) this.retry(c, `อ่าน token ไม่ได้: ${errText(e)}`, 'srv.remote.tokenReadFailed', { err: errText(e) });
       return;
     }
     if (!alive()) return;
     if (!token) {
-      this.retry(c, `ยังไม่มี token ของเครื่องนี้ (ตั้ง ${tokenEnvName(t.id)})`);
+      this.retry(c, `ยังไม่มี token ของเครื่องนี้ (ตั้ง ${tokenEnvName(t.id)})`, 'srv.remote.tokenMissing', { env: tokenEnvName(t.id) });
       return;
     }
     let port: number;
@@ -331,17 +343,17 @@ export class RemoteHub extends EventEmitter {
       port = this.d.direct.port;
     } else {
       if (t.user === '' || t.keyPath === '' || !HOST_RE.test(t.host) || !USER_RE.test(t.user)) {
-        this.retry(c, 'เครื่องนี้ยังไม่ได้ตั้งค่า SSH');
+        this.retry(c, 'เครื่องนี้ยังไม่ได้ตั้งค่า SSH', 'srv.remote.noSsh');
         return;
       }
       if (!keyUnderSsh(t.keyPath, this.d.sshDir)) {
-        this.retry(c, 'ไม่พบไฟล์ key ใน ~/.ssh');
+        this.retry(c, 'ไม่พบไฟล์ key ใน ~/.ssh', 'srv.remote.keyMissing');
         return;
       }
       try {
         port = await (this.d.freePort ?? defaultFreePort)();
       } catch (e) {
-        if (alive()) this.retry(c, `หาพอร์ตว่างไม่ได้: ${errText(e)}`);
+        if (alive()) this.retry(c, `หาพอร์ตว่างไม่ได้: ${errText(e)}`, 'srv.remote.noPort', { err: errText(e) });
         return;
       }
       if (!alive()) return;
@@ -357,11 +369,14 @@ export class RemoteHub extends EventEmitter {
       child.on('error', (e: Error) => {
         exited = true;
         c.tunnelErr = e.message.slice(0, 200);
-        if (alive()) this.retry(c, `เปิด SSH ไม่ได้: ${c.tunnelErr}`);
+        if (alive()) this.retry(c, `เปิด SSH ไม่ได้: ${c.tunnelErr}`, 'srv.remote.sshOpenFailed', { err: c.tunnelErr });
       });
       child.on('exit', () => {
         exited = true;
-        if (alive()) this.retry(c, c.tunnelErr !== '' ? `SSH หลุด: ${c.tunnelErr}` : 'SSH หลุด');
+        if (alive()) {
+          if (c.tunnelErr !== '') this.retry(c, `SSH หลุด: ${c.tunnelErr}`, 'srv.remote.sshDropped', { err: c.tunnelErr });
+          else this.retry(c, 'SSH หลุด', 'srv.remote.sshDroppedPlain');
+        }
       });
       // wait for the forward to accept connections (ssh exits instead when the host / key / forward fails)
       const ready = this.d.portReady ?? defaultPortReady;
@@ -376,7 +391,10 @@ export class RemoteHub extends EventEmitter {
       }
       if (!alive()) return;
       if (!up) {
-        if (!exited) this.retry(c, c.tunnelErr !== '' ? `เชื่อม SSH ไม่ได้: ${c.tunnelErr}` : 'เชื่อม SSH ไม่ได้ (หมดเวลา)');
+        if (!exited) {
+          if (c.tunnelErr !== '') this.retry(c, `เชื่อม SSH ไม่ได้: ${c.tunnelErr}`, 'srv.remote.sshConnectFailed', { err: c.tunnelErr });
+          else this.retry(c, 'เชื่อม SSH ไม่ได้ (หมดเวลา)', 'srv.remote.sshConnectTimeout');
+        }
         return;
       }
     }
@@ -389,7 +407,7 @@ export class RemoteHub extends EventEmitter {
     try {
       ws = (this.d.openWs ?? defaultOpenWs)(`ws://127.0.0.1:${port}`, { [AGENT_TOKEN_HEADER]: token });
     } catch (e) {
-      this.retry(c, `เปิด websocket ไม่ได้: ${errText(e)}`);
+      this.retry(c, `เปิด websocket ไม่ได้: ${errText(e)}`, 'srv.remote.wsFailed', { err: errText(e) });
       return;
     }
     c.ws = ws;
@@ -405,17 +423,16 @@ export class RemoteHub extends EventEmitter {
     });
     ws.on('close', () => {
       if (!alive()) return;
-      const why = /401/.test(lastErr)
-        ? 'token ไม่ตรงกับเครื่องปลายทาง'
-        : /hang up|ECONNRESET|ECONNREFUSED/i.test(lastErr)
-          ? 'ไม่พบ agent บนเครื่องนั้น (ยังไม่ได้ติดตั้ง หรือหยุดทำงาน)'
-          : lastErr !== ''
-            ? `เชื่อมต่อ agent ไม่ได้: ${lastErr}`
-            : 'agent ตัดการเชื่อมต่อ';
-      this.retry(c, why);
+      if (/401/.test(lastErr)) this.retry(c, 'token ไม่ตรงกับเครื่องปลายทาง', 'srv.remote.tokenMismatch');
+      else if (/hang up|ECONNRESET|ECONNREFUSED/i.test(lastErr)) {
+        this.retry(c, 'ไม่พบ agent บนเครื่องนั้น (ยังไม่ได้ติดตั้ง หรือหยุดทำงาน)', 'srv.remote.agentNotFound');
+      } else if (lastErr !== '') this.retry(c, `เชื่อมต่อ agent ไม่ได้: ${lastErr}`, 'srv.remote.agentConnectFailed', { err: lastErr });
+      else this.retry(c, 'agent ตัดการเชื่อมต่อ', 'srv.remote.agentClosed');
     });
     c.watchdog = setInterval(() => {
-      if (alive() && this.now() - c.lastFrame > (this.d.silenceMs ?? SILENCE_MS)) this.retry(c, 'agent เงียบเกินไป (ลิงก์อาจหลุด)');
+      if (alive() && this.now() - c.lastFrame > (this.d.silenceMs ?? SILENCE_MS)) {
+        this.retry(c, 'agent เงียบเกินไป (ลิงก์อาจหลุด)', 'srv.remote.agentSilent');
+      }
     }, 5000);
     c.watchdog.unref?.();
   }
@@ -574,14 +591,18 @@ export class RemoteHub extends EventEmitter {
    */
   forward(machineId: string, msg: ClientMsg): Promise<Ack> {
     const c = this.conns.get(machineId);
-    if (!c) return Promise.reject(new CommandError('เครื่องนี้ไม่ได้เปิด "ดู Claude บนเครื่องนี้"'));
+    if (!c) return Promise.reject(new CommandError('เครื่องนี้ไม่ได้เปิด "ดู Claude บนเครื่องนี้"', 'srv.remote.agentOff'));
     const ws = c.ws;
-    if (c.state !== 'online' || !ws || ws.readyState !== WebSocket.OPEN) return Promise.reject(new CommandError(`เครื่อง ${c.target.name} ยังไม่เชื่อมต่อ (${c.state === 'error' ? (c.error ?? 'ผิดพลาด') : 'กำลังเชื่อมต่อ'})`));
+    if (c.state !== 'online' || !ws || ws.readyState !== WebSocket.OPEN) {
+      const text = `เครื่อง ${c.target.name} ยังไม่เชื่อมต่อ (${c.state === 'error' ? (c.error ?? 'ผิดพลาด') : 'กำลังเชื่อมต่อ'})`;
+      const code = c.state === 'error' ? 'srv.remote.notConnectedError' : 'srv.remote.notConnectedBusy';
+      return Promise.reject(new CommandError(text, code, { name: c.target.name, detail: c.state === 'error' ? (c.error ?? 'ผิดพลาด') : '' }));
+    }
     const reqId = `f${this.now().toString(36)}-${++this.n}`;
     return new Promise<Ack>((resolve) => {
       const timer = setTimeout(() => {
         c.pending.delete(reqId);
-        resolve({ type: 'ack', serverTime: this.now(), reqId, ok: false, error: 'เครื่องปลายทางไม่ตอบ' });
+        resolve({ type: 'ack', serverTime: this.now(), reqId, ok: false, error: 'เครื่องปลายทางไม่ตอบ', code: 'srv.remote.noReply' });
       }, this.d.ackTimeoutMs ?? ACK_TIMEOUT_MS);
       timer.unref?.();
       c.pending.set(reqId, { resolve, timer });

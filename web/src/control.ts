@@ -8,7 +8,9 @@ import {
   type PendingRequest,
   type RunnerState,
   type SessionInfo,
+  DEFAULT_EFFORT,
 } from '../../shared/protocol';
+import { t } from './i18n';
 
 /** runner: controlled from the web now. adoptable: terminal process is gone, can be resumed under the Runner.
  *  readonly: a live terminal session (never written to). */
@@ -20,14 +22,14 @@ export function controlMode(session: SessionInfo, runner: RunnerState | undefine
   return 'readonly';
 }
 
-export const READONLY_REASON = 'เปิดจาก terminal — ดูได้อย่างเดียว';
-export const ADOPT_DISABLED = 'ใช้ได้เมื่อ session นี้ปิดแล้ว';
-export const ADOPT_HINT = 'terminal ปิดแล้ว — กด "ย้ายมาคุมจากเว็บ" เพื่อทำต่อ';
+export const readonlyReason = (): string => t('panels.control.readonlyReason');
+export const adoptDisabledReason = (): string => t('panels.control.adoptDisabled');
+export const adoptHint = (): string => t('panels.control.adoptHint');
 
 /** Reason shown on disabled model/effort/send controls; null when controllable. */
 export function disabledReason(mode: ControlMode): string | null {
   if (mode === 'runner') return null;
-  return mode === 'adoptable' ? ADOPT_HINT : READONLY_REASON;
+  return mode === 'adoptable' ? adoptHint() : readonlyReason();
 }
 
 /** Last two path segments. */
@@ -58,7 +60,7 @@ export function modelTitle(o: ModelOption): string | undefined {
 
 /** Effort to show in a select: the confirmed value of the Runner, else the session's. */
 export function effortValue(runner: RunnerState | undefined, session: SessionInfo): string {
-  return runner?.effort ?? session.effort ?? 'high';
+  return runner?.effort ?? session.effort ?? DEFAULT_EFFORT;
 }
 
 export function modelValue(runner: RunnerState | undefined, session: SessionInfo): string {
@@ -68,11 +70,11 @@ export function modelValue(runner: RunnerState | undefined, session: SessionInfo
 /** Short busy/queue line for the pane head. */
 export function runnerLine(r: RunnerState | undefined): string {
   if (!r) return '';
-  if (!r.alive) return r.error ? `งานหยุดแล้ว: ${r.error}` : 'งานหยุดแล้ว';
-  const parts = [r.busy ? 'กำลังทำ' : 'ว่าง'];
-  if (r.queued > 0) parts.push(`รอคิว ${r.queued} งาน`);
-  if (r.pending.length > 0) parts.push(`รอคุณ ${r.pending.length}`);
-  if (!r.confirmed) parts.push('รอยืนยันโมเดลจากตัวงาน');
+  if (!r.alive) return r.error ? t('panels.control.stoppedError', { error: r.error }) : t('panels.control.stopped');
+  const parts = [r.busy ? t('panels.control.busy') : t('panels.control.idle')];
+  if (r.queued > 0) parts.push(t('panels.control.queued', { n: r.queued }));
+  if (r.pending.length > 0) parts.push(t('panels.control.waitingYou', { n: r.pending.length }));
+  if (!r.confirmed) parts.push(t('panels.control.waitingModel'));
   return parts.join(' · ');
 }
 
@@ -167,7 +169,7 @@ export const isPermissionMode = (v: string): v is PermissionMode => (PERMISSION_
 
 /** How long the first click of "ปิดงาน" stays armed before it reverts. */
 export const CLOSE_CONFIRM_MS = 4000;
-export const CLOSE_TERMINAL_REASON = 'งานที่เปิดจาก terminal ต้องปิดจาก terminal';
+export const closeTerminalReason = (): string => t('panels.control.closeTerminal');
 
 /** Only a live Runner job can be closed from the web (the same condition the stop button uses). */
 export function canCloseJob(mode: ControlMode): boolean {
@@ -176,8 +178,8 @@ export function canCloseJob(mode: ControlMode): boolean {
 
 /** Tooltip of the close button; undefined when it is enabled. */
 export function closeJobTitle(mode: ControlMode): string | undefined {
-  if (mode === 'runner') return 'ปิดงานนี้ — หยุดตัวงานและเอาออกจากผัง';
-  return mode === 'readonly' ? CLOSE_TERMINAL_REASON : (disabledReason(mode) ?? undefined);
+  if (mode === 'runner') return t('panels.control.closeTitle');
+  return mode === 'readonly' ? closeTerminalReason() : (disabledReason(mode) ?? undefined);
 }
 
 /**
@@ -191,8 +193,8 @@ export function closeClick(armed: boolean, canClose: boolean): 'arm' | 'send' | 
 
 // ---- the terminal as a second client of a Runner job (the `cr` command) ----
 
-export const OPEN_TERMINAL_LABEL = 'เปิดใน terminal';
-export const OPEN_TERMINAL_TITLE = 'เปิดหน้าต่าง terminal ที่ต่อกับงานนี้ — พิมพ์สั่งได้พร้อมกับหน้าเว็บ';
+export const openTerminalLabel = (): string => t('panels.control.openTerminal');
+export const openTerminalTitle = (): string => t('panels.control.openTerminalTitle');
 
 /** Open-in-terminal needs a live Runner job (a terminal session already has its own window). */
 export function canOpenTerminal(mode: ControlMode): boolean {
@@ -210,29 +212,29 @@ export function shortId(sessionId: string): string {
  */
 export function terminalHint(mode: ControlMode, sessionId: string): string | null {
   if (mode !== 'readonly') return null;
-  return `อยากสั่งจากเว็บด้วย: กด "ยึดมาคุม" (ปิด claude ใน terminal ให้ แล้วย้ายมาคุมจากเว็บ ใช้ได้เมื่อ session ว่าง) — หรือออกเองใน terminal (/exit) แล้วรัน  cr resume ${shortId(sessionId)}  แล้วกด "ย้ายมาคุมจากเว็บ"`;
+  return t('panels.control.terminalHint', { id: shortId(sessionId) });
 }
 
 // ---- take over a live terminal session ("ยึดมาคุม") ----
 
-export const TAKEOVER_LABEL = 'ยึดมาคุม';
-export const TAKEOVER_ARMED_LABEL = 'กดอีกครั้งเพื่อปิด claude ใน terminal แล้วย้ายมาคุม';
-export const TAKEOVER_TITLE = 'ปิด claude ที่เปิดอยู่ใน terminal ของ session นี้ แล้วเปิดต่อที่เว็บ (ใช้ได้เมื่อว่างเท่านั้น)';
-export const TAKEOVER_BUSY_TITLE = 'งานนี้กำลังทำงานอยู่ รอให้ว่างก่อน';
-export const TAKEOVER_NOT_LIVE_TITLE = 'ใช้ได้กับ session ที่เปิดใน terminal และยังเปิดอยู่';
+export const takeoverLabel = (): string => t('panels.control.takeover');
+export const takeoverArmedLabel = (): string => t('panels.control.takeoverArmed');
+export const takeoverTitle = (): string => t('panels.control.takeoverTitle');
+export const takeoverBusyTitle = (): string => t('panels.control.takeoverBusy');
+export const takeoverNotLiveTitle = (): string => t('panels.control.takeoverNotLive');
 
 /**
  * Whether the take-over button can be pressed, and the tooltip to show. The server re-checks everything (pid, image
  * name, idle, subagents, transcript age); this only keeps the button from inviting an obvious refusal.
  */
 export function takeoverGate(session: Pick<SessionInfo, 'status' | 'waitItems' | 'subagents'>, mode: ControlMode): { enabled: boolean; title: string } {
-  if (mode !== 'readonly') return { enabled: false, title: TAKEOVER_NOT_LIVE_TITLE };
+  if (mode !== 'readonly') return { enabled: false, title: takeoverNotLiveTitle() };
   const asking = (session.waitItems?.length ?? 0) > 0;
   const subRunning = session.subagents.some((a) => a.status === 'running' && !a.finished);
   if (session.status === 'running' || session.status === 'waiting' || session.status === 'unreadable' || asking || subRunning) {
-    return { enabled: false, title: TAKEOVER_BUSY_TITLE };
+    return { enabled: false, title: takeoverBusyTitle() };
   }
-  return { enabled: true, title: TAKEOVER_TITLE };
+  return { enabled: true, title: takeoverTitle() };
 }
 
 // ---- queued messages strip ("ข้อความรอส่ง") ----
@@ -247,8 +249,8 @@ export interface QueueStrip {
 /** "ไม่ถึงนาที" / "6 นาที" / "1 ชม. 5 นาที". */
 export function sinceLabel(from: number, now: number): string {
   const min = Math.max(0, Math.floor((now - from) / 60_000));
-  if (min < 1) return 'ไม่ถึงนาที';
-  return min < 60 ? `${min} นาที` : `${Math.floor(min / 60)} ชม. ${min % 60} นาที`;
+  if (min < 1) return t('panels.control.sinceUnderMinute');
+  return min < 60 ? t('panels.control.sinceMinutes', { n: min }) : t('panels.control.sinceHours', { h: Math.floor(min / 60), m: min % 60 });
 }
 
 /** The tool the job is inside right now: the newest timeline event when it is a tool line and the job is busy. */
@@ -264,12 +266,12 @@ export function queueStrip(session: SessionInfo | undefined, runner: RunnerState
   if (!runner?.alive || runner.queued <= 0) return null;
   return {
     count: runner.queued,
-    headline: `ข้อความรอส่ง ${runner.queued} · จะถึง Claude หลังคำสั่งที่กำลังรันเสร็จ`,
+    headline: t('panels.control.queueHeadline', { n: runner.queued }),
     texts: runner.queuedTexts ?? [],
     running: runningNow(session, runner, now),
   };
 }
 
-export const SEND_NOW_LABEL = 'หยุดแล้วส่งเลย';
-export const SEND_NOW_CONFIRM_LABEL = 'ยืนยัน: หยุดคำสั่งที่รันอยู่';
-export const SEND_NOW_TITLE = 'หยุดคำสั่งที่กำลังรันอยู่ (งานที่ทำค้างจะถูกตัด) แล้วส่งข้อความที่รออยู่ทั้งหมดรวมเป็นข้อความเดียว';
+export const sendNowLabel = (): string => t('panels.control.sendNow');
+export const sendNowConfirmLabel = (): string => t('panels.control.sendNowConfirm');
+export const sendNowTitle = (): string => t('panels.control.sendNowTitle');

@@ -3,7 +3,7 @@ import { toolLabel, shortPath } from '../src/toolLabels';
 
 describe('shortPath', () => {
   it('keeps the last two segments', () => {
-    expect(shortPath('C:\\Users\\a\\proj\\src\\App.tsx')).toBe('src/App.tsx');
+    expect(shortPath('C:\\Users\\you\\proj\\src\\App.tsx')).toBe('src/App.tsx');
     expect(shortPath('/a/b/c.ts')).toBe('b/c.ts');
     expect(shortPath('c.ts')).toBe('c.ts');
     expect(shortPath('http://127.0.0.1:5173/x/y/z')).toBe('http://127.0.0.1:5173/x/y/z');

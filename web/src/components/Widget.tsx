@@ -1,5 +1,6 @@
 import { useId, useRef, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
 import { SNAP, moveRect, resizeRect, type Rect } from '../layout';
+import { useT } from '../i18n';
 
 export interface WidgetProps {
   title: string; // Thai title shown in the title bar
@@ -32,6 +33,7 @@ const ARROWS: Record<string, [number, number]> = {
 };
 
 export function Widget({ title, rect, z, stacked, className, onChange, onCommit, onRaise, onHide, children }: WidgetProps) {
+  const t = useT();
   const drag = useRef<Drag | null>(null);
   const hintId = useId();
 
@@ -96,7 +98,7 @@ export function Widget({ title, rect, z, stacked, className, onChange, onCommit,
             <button
               type="button"
               className="cr-grip"
-              aria-label={`ย้าย ${title}`}
+              aria-label={t('shell.widget.move', { title })}
               aria-describedby={hintId}
               onPointerDown={begin('move')}
               onPointerMove={move}
@@ -117,12 +119,12 @@ export function Widget({ title, rect, z, stacked, className, onChange, onCommit,
           )}
           {!stacked && (
             <span id={hintId} className="cr-sr">
-              ลูกศรเพื่อย้าย, Shift + ลูกศรเพื่อปรับขนาด
+              {t('shell.widget.keysHint')}
             </span>
           )}
           <h2 className="cr-title">{title}</h2>
           {onHide && (
-            <button type="button" className="cr-hide" aria-label={`ซ่อน ${title}`} title="ซ่อน (เปิดกลับจากแถบด้านซ้ายบน)" onClick={onHide}>
+            <button type="button" className="cr-hide" aria-label={t('shell.widget.hide', { title })} title={t('shell.widget.hideTitle')} onClick={onHide}>
               <svg aria-hidden="true" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
                 <path d="M2 2l8 8M10 2l-8 8" />
               </svg>
@@ -134,7 +136,7 @@ export function Widget({ title, rect, z, stacked, className, onChange, onCommit,
           <button
             type="button"
             className="cr-size"
-            aria-label={`ปรับขนาด ${title}`}
+            aria-label={t('shell.widget.resize', { title })}
             onPointerDown={begin('size')}
             onPointerMove={move}
             onPointerUp={end}

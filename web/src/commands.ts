@@ -1,10 +1,13 @@
 // Browser side of stage 2 commands: assigns a reqId, sends, resolves when the matching ack arrives.
-import type { ClientMsg, ServerMsg } from '../../shared/protocol';
+import type { ClientMsg, ServerMsg, VarMap } from '../../shared/protocol';
 import type { AckNext, ClientMsgNext, ServerMsgNext } from './protocolNext';
+import { t } from './i18n';
 
 export interface CommandResult {
   ok: boolean;
-  error?: string;
+  error?: string; // Thai fallback; use serverText(r) to show it in the current language
+  code?: string; // stable srv.* code of `error` (translate with serverText / serverCode)
+  vars?: VarMap; // values for the {name} placeholders of `code`
   sessionId?: string;
   linkId?: string; // link_create
   machineId?: string; // machine_add
@@ -38,14 +41,14 @@ export function createCommander(
       return new Promise<CommandResult>((resolve) => {
         const timer = setTimeout(() => {
           waiting.delete(reqId);
-          resolve({ ok: false, error: 'เซิร์ฟเวอร์ไม่ตอบ' });
+          resolve({ ok: false, error: t('shell.cmd.noReply') });
         }, perCallTimeoutMs ?? (cmd.type === 'takeover' ? 60_000 : timeoutMs)); // takeover: kill + wait + adopt, maybe over ssh
         waiting.set(reqId, { resolve, timer });
         const sent = sendRaw(JSON.stringify({ ...cmd, reqId }));
         if (!sent) {
           clearTimeout(timer);
           waiting.delete(reqId);
-          resolve({ ok: false, error: 'ยังไม่ได้เชื่อมต่อเซิร์ฟเวอร์' });
+          resolve({ ok: false, error: t('shell.conn.notConnected') });
         }
       });
     },
@@ -55,7 +58,7 @@ export function createCommander(
       if (!w) return;
       clearTimeout(w.timer);
       waiting.delete(msg.reqId);
-      w.resolve({ ok: msg.ok, error: msg.error, sessionId: msg.sessionId, linkId: msg.linkId, machineId: (msg as typeof msg & AckNext).machineId, answer: msg.answer });
+      w.resolve({ ok: msg.ok, error: msg.error, code: msg.code, vars: msg.vars, sessionId: msg.sessionId, linkId: msg.linkId, machineId: (msg as typeof msg & AckNext).machineId, answer: msg.answer });
     },
     failAll(error) {
       for (const [id, w] of waiting) {

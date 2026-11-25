@@ -13,9 +13,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const REMOTE_DIR = 'C:\\Users\\User\\claude-control-room-agent';
-const REMOTE_TAR = 'C:\\Users\\User\\cr-agent-upload.tar';
-const REMOTE_TAR_SCP = 'C:/Users/User/cr-agent-upload.tar';
+// Remote paths sit under the remote user's profile dir, which the remote PC reports itself (resolveRemoteHome).
+const REMOTE_DIR_NAME = 'claude-control-room-agent';
+const REMOTE_TAR_NAME = 'cr-agent-upload.tar';
+const REMOTE_HOME_CMD = 'cmd /c echo %USERPROFILE%';
+const REMOTE_HOME_RE = /^[A-Za-z]:\\[^"&|<>^%\r\n]*$/;
 const HOST_RE = /^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$/;
 const USER_RE = /^[A-Za-z0-9._][A-Za-z0-9._-]{0,63}$/;
 const SHA_RE = /^[0-9a-f]{64}$/;
@@ -29,6 +31,34 @@ export function tokenEnvName(machineId) {
 
 export function sha256Hex(s) {
   return createHash('sha256').update(String(s), 'utf8').digest('hex');
+}
+
+/** Checks the remote's answer to `echo %USERPROFILE%` and returns it without trailing backslashes. Throws on anything else. */
+export function parseRemoteHome(stdout) {
+  const home = String(stdout ?? '').trim();
+  if (!REMOTE_HOME_RE.test(home)) throw new Error(`remote home is not a Windows path: ${JSON.stringify(home.slice(0, 200))}`);
+  return home.replace(/\\+$/, '');
+}
+
+/** Remote install paths under a remote profile dir: Windows form for ssh/cmd, forward-slash form for scp. */
+export function remotePaths(home) {
+  return {
+    dir: `${home}\\${REMOTE_DIR_NAME}`,
+    tar: `${home}\\${REMOTE_TAR_NAME}`,
+    tarScp: `${home.replace(/\\/g, '/')}/${REMOTE_TAR_NAME}`,
+  };
+}
+
+function sshExec(target, remote, timeoutMs = 60000) {
+  const res = spawnSync('ssh', [...sshBaseArgs(target), remote], { encoding: 'utf8', timeout: timeoutMs, windowsHide: true });
+  if (res.error) throw new Error(`remote home: ${res.error.message}`);
+  if (res.status !== 0) throw new Error(`remote home: ssh failed (exit ${res.status ?? res.signal})`);
+  return res.stdout || '';
+}
+
+/** Asks the remote PC for its profile dir over the same ssh channel. `run(target, remoteCmd)` is injectable (tests stay offline). */
+export function resolveRemoteHome(target, run = sshExec) {
+  return parseRemoteHome(run(target, REMOTE_HOME_CMD));
 }
 
 export function sshBaseArgs({ host, user, keyPath }) {
@@ -69,20 +99,24 @@ export function validateTarget(target, sshDir = defaultSshDir()) {
  * Step 1 carries check:'node>=22'; step 8 carries poll (repeated until the agent listens).
  */
 export function buildPlan(target, opts = {}) {
+  if (typeof opts.remoteHome !== 'string' || opts.remoteHome === '') {
+    throw new Error('buildPlan: opts.remoteHome is required (get it from resolveRemoteHome)');
+  }
+  const { dir, tar, tarScp } = remotePaths(opts.remoteHome);
   const tarPath = opts.tarPath ?? path.join(os.tmpdir(), 'cr-agent-pack.tar');
   const sha256 = opts.sha256 ?? '<sha256>';
   const repoRoot = opts.repoRoot ?? REPO_ROOT;
   const ssh = (remote) => [...sshBaseArgs(target), remote];
-  const inDir = `cd /d ${REMOTE_DIR} && `;
+  const inDir = `cd /d ${dir} && `;
   const agentSetup = (sub) => `${inDir}node scripts\\agent-setup.mjs ${sub}`;
   return [
     { name: 'check node', cmd: 'ssh', args: ssh('node --version'), timeoutMs: 60000, check: 'node>=22' },
     { name: 'pack', cmd: 'git', args: ['archive', '--format=tar', '-o', tarPath, 'HEAD'], cwd: repoRoot, timeoutMs: 120000 },
-    { name: 'upload', cmd: 'scp', args: scpArgs(target, tarPath, REMOTE_TAR_SCP), timeoutMs: 600000 },
+    { name: 'upload', cmd: 'scp', args: scpArgs(target, tarPath, tarScp), timeoutMs: 600000 },
     {
       name: 'unpack',
       cmd: 'ssh',
-      args: ssh(`cmd /c (if not exist ${REMOTE_DIR} mkdir ${REMOTE_DIR}) && tar -xf ${REMOTE_TAR} -C ${REMOTE_DIR} && del ${REMOTE_TAR}`),
+      args: ssh(`cmd /c (if not exist ${dir} mkdir ${dir}) && tar -xf ${tar} -C ${dir} && del ${tar}`),
       timeoutMs: 300000,
     },
     { name: 'stop agent', cmd: 'ssh', args: ssh(agentSetup('stop')), timeoutMs: 60000 },
@@ -186,9 +220,11 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   const targetErr = validateTarget(target);
   if (targetErr) throw new Error(`machine "${id}": ${targetErr}`);
 
+  const remoteHome = dryRun ? '<remote profile dir>' : resolveRemoteHome(target);
+  const rp = remotePaths(remoteHome);
   const tarPath = path.join(os.tmpdir(), `cr-agent-${process.pid}-${randomUUID()}.tar`);
   const sha256 = dryRun ? '<sha256>' : sha256Hex(await tokenFor(id, flags.includes('--token-stdin'), env));
-  const plan = buildPlan(target, { tarPath, sha256 });
+  const plan = buildPlan(target, { tarPath, sha256, remoteHome });
 
   if (dryRun) {
     console.log(`dry run: install on "${row.name}" (${id}); nothing is executed`);
@@ -220,7 +256,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   console.log('');
   console.log(`ติดตั้ง Claude Control Room Agent บน "${row.name}" เรียบร้อยแล้ว`);
   console.log(`Installed the Claude Control Room agent on "${row.name}".`);
-  console.log(`  install dir: ${REMOTE_DIR}`);
+  console.log(`  install dir: ${rp.dir}`);
   console.log('  log: %USERPROFILE%\\.claude-control-room\\agent.log (on the remote PC)');
   console.log('  ต้องติ๊ก "ดู Claude บนเครื่องนี้" ให้เครื่องนี้ใน Control Room ก่อน จึงจะเชื่อมต่อได้');
   console.log('  Tick "ดู Claude บนเครื่องนี้" for this machine in the Control Room before it connects.');

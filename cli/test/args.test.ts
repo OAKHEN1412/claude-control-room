@@ -17,7 +17,7 @@ describe('parseArgs', () => {
   it('new: cwd defaults to the current folder, prompt words are joined, model/effort validated', () => {
     expect(parse(['new', 'ตอบคำว่า', 'OK'])).toMatchObject({
       ok: true,
-      command: { kind: 'new', cwd: 'C:\\work', model: 'opus', effort: 'high', prompt: 'ตอบคำว่า OK', attach: true },
+      command: { kind: 'new', cwd: 'C:\\work', model: 'opus', effort: 'medium', prompt: 'ตอบคำว่า OK', attach: true },
     });
     expect(parse(['new', '--cwd', 'D:\\x', '--model', 'haiku', '--effort', 'low', '--no-attach', 'hi'])).toMatchObject({
       command: { cwd: 'D:\\x', model: 'haiku', effort: 'low', prompt: 'hi', attach: false },

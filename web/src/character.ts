@@ -1,6 +1,7 @@
 // Stage 6: what the Claude character shows. Pure functions; the hook that feeds them is in useCharacter.ts.
 // Priority: waiting for the user > error just happened > done just happened > working > idle.
 import type { SessionInfo, Status, WorklogCard } from '../../shared/protocol';
+import { t } from './i18n';
 
 export type CharState = 'idle' | 'working' | 'asking' | 'error' | 'done';
 
@@ -25,15 +26,15 @@ export function pickCharState(i: CharInput): CharState {
 export function charLabel(state: CharState, i: Pick<CharInput, 'waiting' | 'running'>): string {
   switch (state) {
     case 'asking':
-      return `มีคำถามรอ ${i.waiting}`;
+      return t('shell.char.asking', { n: i.waiting });
     case 'error':
-      return 'งานล้มเหลว';
+      return t('shell.char.error');
     case 'done':
-      return 'เสร็จแล้ว';
+      return t('shell.char.done');
     case 'working':
-      return `ทำอยู่ ${i.running} งาน`;
+      return t('shell.char.working', { n: i.running });
     default:
-      return 'ว่าง';
+      return t('shell.char.idle');
   }
 }
 

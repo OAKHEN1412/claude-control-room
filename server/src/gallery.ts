@@ -20,11 +20,11 @@ export const VIDEO_TYPES: Record<string, string> = {
   '.webm': 'video/webm',
 };
 
-/** Scan roots: CR_GALLERY_ROOTS (path-delimiter separated) or ~/videos and C:/hf. Each root holds project folders. */
+/** Scan roots: CR_GALLERY_ROOTS (path-delimiter separated) or just ~/videos. Each root holds project folders. */
 export function defaultGalleryRoots(): string[] {
   const o = process.env.CR_GALLERY_ROOTS;
   if (o && o.trim() !== '') return o.split(path.delimiter).map((s) => s.trim()).filter((s) => s !== '');
-  return [path.join(os.homedir(), 'videos'), 'C:/hf'];
+  return [path.join(os.homedir(), 'videos')];
 }
 
 export interface FoundFile {
@@ -385,7 +385,7 @@ export class GalleryService {
         (this.deps.openFolder ?? openInExplorer)(f.file);
         this.json(res, 200, { ok: true }, cors);
       } catch {
-        this.json(res, 500, { ok: false, error: 'เปิดโฟลเดอร์ไม่ได้' }, cors);
+        this.json(res, 500, { ok: false, error: 'เปิดโฟลเดอร์ไม่ได้', code: 'srv.gallery.openFailed' }, cors);
       }
       return;
     }

@@ -61,7 +61,7 @@ export class UploadApi {
     const mime = typeof req.headers['content-type'] === 'string' ? req.headers['content-type'] : 'application/octet-stream';
     const declared = Number(req.headers['content-length']);
     if (Number.isFinite(declared) && declared > this.max) {
-      this.json(res, 413, { ok: false, error: UPLOAD_TOO_BIG }, cors, true);
+      this.json(res, 413, { ok: false, error: UPLOAD_TOO_BIG, code: 'srv.upload.tooBig' }, cors, true);
       req.resume();
       return;
     }
@@ -74,7 +74,7 @@ export class UploadApi {
       if (n > this.max) {
         over = true;
         chunks.length = 0;
-        this.json(res, 413, { ok: false, error: UPLOAD_TOO_BIG }, cors, true);
+        this.json(res, 413, { ok: false, error: UPLOAD_TOO_BIG, code: 'srv.upload.tooBig' }, cors, true);
         return; // the rest of the body is discarded as it arrives
       }
       chunks.push(c);
@@ -82,18 +82,18 @@ export class UploadApi {
     req.on('end', () => {
       if (over) return;
       if (n === 0) {
-        this.json(res, 400, { ok: false, error: 'ไฟล์ว่างเปล่า' }, cors);
+        this.json(res, 400, { ok: false, error: 'ไฟล์ว่างเปล่า', code: 'srv.upload.empty' }, cors);
         return;
       }
       try {
         const rec = this.deps.store.save(name, mime, Buffer.concat(chunks));
         this.json(res, 200, { ok: true, ...rec }, cors);
       } catch {
-        this.json(res, 500, { ok: false, error: 'บันทึกไฟล์ไม่สำเร็จ' }, cors);
+        this.json(res, 500, { ok: false, error: 'บันทึกไฟล์ไม่สำเร็จ', code: 'srv.upload.saveFailed' }, cors);
       }
     });
     req.on('error', () => {
-      if (!res.headersSent) this.json(res, 400, { ok: false, error: 'อัปโหลดไม่สำเร็จ' }, cors);
+      if (!res.headersSent) this.json(res, 400, { ok: false, error: 'อัปโหลดไม่สำเร็จ', code: 'srv.upload.failed' }, cors);
     });
   }
 }

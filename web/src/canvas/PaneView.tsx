@@ -7,6 +7,7 @@ import { useAgentTimeline } from '../agentTimeline';
 import { Compose, ModelEffort, PendingList, QuickPanel, useCommand, useJobButtons, type Command } from '../components/Controls';
 import { StatusChip, cwdTail } from '../components/SessionPane';
 import { shortModel } from '../components/graphLayout';
+import { useT } from '../i18n';
 import { TerminalLog } from '../components/TerminalLog';
 import { BoltIcon, ExpandIcon, LinkIcon, PowerIcon, SlidersIcon, StopIcon, TakeoverIcon, TerminalIcon } from './icons';
 import type { PaneSource } from './paneStore';
@@ -50,16 +51,17 @@ function RailButton({ label, pressed, disabled, danger, onClick, children }: { l
 
 /** "ส่งคำตอบต่อไปที่…": keyboard route to a relay link (the same thing as dragging a wire between two session nodes). */
 function LinkTo({ from, sessions, command }: { from: string; sessions: SessionInfo[]; command: Command }) {
+  const t = useT();
   const others = sessions.filter((s) => s.sessionId !== from);
   const [to, setTo] = useState('');
   const [done, setDone] = useState(false);
   const { run, error, working } = useCommand(command);
   const label = (s: SessionInfo) => `${s.title && s.title !== '(ไม่มีชื่อ)' ? s.title : s.name} — ${cwdTail(s.cwd)}`;
   return (
-    <div className="cv-linkto" role="group" aria-label="ส่งคำตอบต่อไปที่">
-      <div className="cv-fly-title">ส่งคำตอบต่อไปที่…</div>
+    <div className="cv-linkto" role="group" aria-label={t('canvas.paneView.linkToAria')}>
+      <div className="cv-fly-title">{t('canvas.paneView.linkToTitle')}</div>
       <select
-        aria-label="เลือกงานปลายทาง"
+        aria-label={t('canvas.paneView.pickTarget')}
         className="cp-select"
         value={to}
         disabled={others.length === 0}
@@ -68,7 +70,7 @@ function LinkTo({ from, sessions, command }: { from: string; sessions: SessionIn
           setDone(false);
         }}
       >
-        <option value="">{others.length === 0 ? 'ไม่มีงานอื่น' : 'เลือกงานปลายทาง'}</option>
+        <option value="">{others.length === 0 ? t('canvas.paneView.noOther') : t('canvas.paneView.pickTarget')}</option>
         {others.map((s) => (
           <option key={s.sessionId} value={s.sessionId}>
             {label(s)}
@@ -84,9 +86,9 @@ function LinkTo({ from, sessions, command }: { from: string; sessions: SessionIn
           setDone(r.ok);
         }}
       >
-        {working ? 'กำลังต่อ…' : 'ต่อเส้น'}
+        {working ? t('canvas.paneView.linking') : t('canvas.paneView.link')}
       </button>
-      {done && !error && <div className="cc-ok" role="status">ต่อเส้นแล้ว — ทุกคำตอบสุดท้ายจะถูกส่งไปงานนั้น</div>}
+      {done && !error && <div className="cc-ok" role="status">{t('canvas.paneView.linked')}</div>}
       {error && (
         <div className="cn-error" role="alert">
           {error}
@@ -97,6 +99,7 @@ function LinkTo({ from, sessions, command }: { from: string; sessions: SessionIn
 }
 
 function JobRail({ session, runner, command }: { session: SessionInfo; runner: RunnerState | undefined; command: Command }) {
+  const t = useT();
   const j = useJobButtons({ session, runner, command });
   return (
     <>
@@ -108,14 +111,14 @@ function JobRail({ session, runner, command }: { session: SessionInfo; runner: R
           <TakeoverIcon />
         </RailButton>
       )}
-      {j.takeover.armed && <span className="cv-rail-confirm" role="status">ยืนยัน?</span>}
+      {j.takeover.armed && <span className="cv-rail-confirm" role="status">{t('canvas.paneView.confirm')}</span>}
       <RailButton label={j.stop.title} disabled={j.stop.disabled} onClick={j.stop.onClick}>
         <StopIcon />
       </RailButton>
-      <RailButton label={j.close.armed ? 'กดอีกครั้งเพื่อยืนยันปิดงาน' : (j.close.title ?? 'ปิดงาน')} danger={j.close.armed} disabled={j.close.disabled} onClick={j.close.onClick}>
+      <RailButton label={j.close.armed ? t('canvas.paneView.closeConfirm') : (j.close.title ?? t('canvas.paneView.closeJob'))} danger={j.close.armed} disabled={j.close.disabled} onClick={j.close.onClick}>
         <PowerIcon />
       </RailButton>
-      {j.close.armed && <span className="cv-rail-confirm" role="status">ยืนยัน?</span>}
+      {j.close.armed && <span className="cv-rail-confirm" role="status">{t('canvas.paneView.confirm')}</span>}
       {j.error && (
         <span className="cv-rail-err" role="alert" title={j.error}>
           !
@@ -126,6 +129,7 @@ function JobRail({ session, runner, command }: { session: SessionInfo; runner: R
 }
 
 export function PaneView({ source, session, sessions, runner, command, active, openSessionToken, onConnect, onDisconnect, onClearAgent, onFullScreen }: PaneViewProps) {
+  const t = useT();
   const [panel, setPanel] = useState<Panel | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
@@ -189,9 +193,9 @@ export function PaneView({ source, session, sessions, runner, command, active, o
         {session && agentMode && agent && (
           <div className="cv-agenthead">
             <span className="cv-agenthead-text" title={agent.description}>
-              subagent · {agent.description} · {shortModel(agent.model) ?? 'ไม่ทราบโมเดล'}
+              subagent · {agent.description} · {shortModel(agent.model) ?? t('canvas.paneView.unknownModel')}
             </span>
-            <button type="button" className="cv-link" onClick={onClearAgent} title={`กลับไปดูงานหลัก ${parentName}`}>
+            <button type="button" className="cv-link" onClick={onClearAgent} title={t('canvas.paneView.backTo', { name: parentName })}>
               ← {parentName}
             </button>
           </div>
@@ -205,48 +209,48 @@ export function PaneView({ source, session, sessions, runner, command, active, o
             onScroll={onScroll}
             tabIndex={0}
             role="region"
-            aria-label={`ประวัติงาน ${session.name}`}
+            aria-label={t('canvas.paneView.historyAria', { name: session.name })}
           >
             {agentMode && remoteSession ? (
               <div className="cv-agentnote">
-                <div>{agent?.thought || 'ยังไม่มีข้อมูลงานย่อย'}</div>
-                <div className="cc-muted">ดูได้เฉพาะเครื่องนี้</div>
+                <div>{agent?.thought || t('canvas.paneView.noSubagentData')}</div>
+                <div className="cc-muted">{t('canvas.paneView.localOnly')}</div>
               </div>
             ) : agentMode && tl.failed && events.length === 0 ? (
               <div className="cv-agentnote">
-                <div>{agent?.thought || 'ยังไม่มีข้อมูลงานย่อย'}</div>
-                <div className="cc-muted">ดึงบันทึกของงานย่อยไม่ได้ (โหมดตัวอย่างหรือเซิร์ฟเวอร์ยังไม่รองรับ)</div>
+                <div>{agent?.thought || t('canvas.paneView.noSubagentData')}</div>
+                <div className="cc-muted">{t('canvas.paneView.logUnavailable')}</div>
               </div>
             ) : (
-              <TerminalLog events={events} thought={thought} emptyText={agentMode && tl.loading ? 'กำลังโหลดบันทึกของงานย่อย…' : undefined} />
+              <TerminalLog events={events} thought={thought} emptyText={agentMode && tl.loading ? t('canvas.paneView.loadingLog') : undefined} />
             )}
           </div>
         ) : (
           <div className="cp-scroll is-term cv-pane-log cv-unconnected">
-            <div className="cv-unconnected-title">ยังไม่ได้ต่อ</div>
-            <div className="cv-unconnected-hint">ลากเส้นจากบล็อก AI มาต่อ</div>
+            <div className="cv-unconnected-title">{t('canvas.paneView.unconnected')}</div>
+            <div className="cv-unconnected-hint">{t('canvas.paneView.dragHint')}</div>
           </div>
         )}
         {active && session && !atBottom && (
           <button type="button" className="cv-latest" onClick={toBottom} data-nodrag="1">
-            ↓ ล่าสุด
+            {t('canvas.paneView.latest')}
           </button>
         )}
         {active && session && command && <PendingList session={session} runner={runner} command={command} />}
         {active && session && command && <Compose session={session} runner={runner} command={command} compact />}
       </div>
 
-      <nav className="cv-rail" aria-label="เครื่องมือของช่อง">
-        <RailButton label="เลือกงานที่จะดู" pressed={panel === 'session'} onClick={() => toggle('session')}>
+      <nav className="cv-rail" aria-label={t('canvas.paneView.railAria')}>
+        <RailButton label={t('canvas.paneView.pickJob')} pressed={panel === 'session'} onClick={() => toggle('session')}>
           <LinkIcon />
         </RailButton>
-        <RailButton label="โมเดล effort โหมดสิทธิ์ RC" pressed={panel === 'model'} disabled={!session || !command} onClick={() => toggle('model')}>
+        <RailButton label={t('canvas.paneView.modelTitle')} pressed={panel === 'model'} disabled={!session || !command} onClick={() => toggle('model')}>
           <SlidersIcon />
         </RailButton>
-        <RailButton label="ปุ่มลัดและรับช่วงคุม" pressed={panel === 'quick'} disabled={!session || !command} onClick={() => toggle('quick')}>
+        <RailButton label={t('canvas.paneView.quickTitle')} pressed={panel === 'quick'} disabled={!session || !command} onClick={() => toggle('quick')}>
           <BoltIcon />
         </RailButton>
-        <RailButton label="แยกเต็มจอ" disabled={!session} onClick={() => sid && onFullScreen(sid)}>
+        <RailButton label={t('canvas.paneView.fullscreen')} disabled={!session} onClick={() => sid && onFullScreen(sid)}>
           <ExpandIcon />
         </RailButton>
         <span className="cv-rail-sep" aria-hidden="true" />
@@ -254,12 +258,12 @@ export function PaneView({ source, session, sessions, runner, command, active, o
       </nav>
 
       {panel && (
-        <div className="cv-fly" role="dialog" aria-label="ตั้งค่าของช่อง" onKeyDown={onFlyKey}>
+        <div className="cv-fly" role="dialog" aria-label={t('canvas.paneView.settingsAria')} onKeyDown={onFlyKey}>
           {panel === 'session' && (
             <>
-              <div className="cv-fly-title">เชื่อมกับงาน</div>
+              <div className="cv-fly-title">{t('canvas.paneView.linkTitle')}</div>
               <select
-                aria-label="เลือก session"
+                aria-label={t('canvas.paneView.pickSession')}
                 className="cp-select"
                 value={sid ?? ''}
                 onChange={(e) => {
@@ -268,7 +272,7 @@ export function PaneView({ source, session, sessions, runner, command, active, o
               >
                 {!session && (
                   <option value="" disabled>
-                    เลือก session
+                    {t('canvas.paneView.pickSession')}
                   </option>
                 )}
                 {sessions.map((s) => (
@@ -292,22 +296,22 @@ export function PaneView({ source, session, sessions, runner, command, active, o
               )}
               {source && (
                 <button type="button" className="cc-btn" onClick={onDisconnect}>
-                  ตัดการเชื่อมต่อ
+                  {t('canvas.paneView.disconnect')}
                 </button>
               )}
-              <div className="cc-muted">หรือลากเส้นจากบล็อก AI มาที่จุดซ้ายของช่องนี้</div>
+              <div className="cc-muted">{t('canvas.paneView.orDrag')}</div>
               {session && command && <LinkTo key={session.sessionId} from={session.sessionId} sessions={sessions} command={command} />}
             </>
           )}
           {panel === 'model' && session && command && (
             <>
-              <div className="cv-fly-title">โมเดลและโหมด</div>
+              <div className="cv-fly-title">{t('canvas.paneView.modelAndMode')}</div>
               <ModelEffort session={session} runner={runner} command={command} />
             </>
           )}
           {panel === 'quick' && session && command && (
             <>
-              <div className="cv-fly-title">ปุ่มลัด</div>
+              <div className="cv-fly-title">{t('canvas.paneView.quickKeys')}</div>
               <QuickPanel session={session} runner={runner} command={command} />
             </>
           )}

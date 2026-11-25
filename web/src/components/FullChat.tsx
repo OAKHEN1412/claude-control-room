@@ -3,6 +3,7 @@ import type { RunnerState, SessionInfo } from '../../../shared/protocol';
 import { Compose, ModelEffort, PendingList, type Command } from './Controls';
 import { STATUS_VAR, STATUS_WORD } from './graphLayout';
 import { TerminalLog } from './TerminalLog';
+import { useT } from '../i18n';
 import './control.css';
 
 export interface FullChatProps {
@@ -14,6 +15,7 @@ export interface FullChatProps {
 
 /** Full-screen chat for one session: same controls as the pane, bigger. */
 export function FullChat({ session, runner, command, onClose }: FullChatProps) {
+  const t = useT();
   const ref = useRef<HTMLDivElement>(null);
   const last = session.timeline.length > 0 ? session.timeline[session.timeline.length - 1].ts : 0;
   useEffect(() => {
@@ -29,10 +31,10 @@ export function FullChat({ session, runner, command, onClose }: FullChatProps) {
   }, [onClose]);
 
   return (
-    <section className="cf-overlay" data-drop-host="1" role="dialog" aria-modal="true" aria-label="แชทเต็มจอ">
+    <section className="cf-overlay" data-drop-host="1" role="dialog" aria-modal="true" aria-label={t('shell.fullChat.aria')}>
       <div className="cf-head">
         <button type="button" className="cc-btn" onClick={onClose}>
-          กลับหน้าโครงข่าย
+          {t('shell.fullChat.back')}
         </button>
         <div className="cf-title">
           <h2>{session.title || session.name}</h2>

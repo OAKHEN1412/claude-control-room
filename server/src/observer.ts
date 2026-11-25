@@ -3,6 +3,7 @@
 // touches a session. Rate-limited (asks are user driven, but a runaway client must not burn quota).
 import type { RunnerState, SessionInfo, WorklogCard } from '../../shared/protocol';
 import { jobTitle, waitLines } from '../../shared/observer';
+import { CodedError } from './codedError';
 import type { WorklogDb } from './db';
 import type { HaikuFn } from './haiku';
 
@@ -52,7 +53,7 @@ export function buildAskPrompt(question: string, digest: string): string {
   return `ข้อมูลงานทั้งหมดตอนนี้:\n${digest}\n\nคำถามของผู้ใช้: ${clip(oneLine(question), ASK_MAX_CHARS)}`;
 }
 
-export class AskError extends Error {}
+export class AskError extends CodedError {}
 
 export interface ObserverOptions {
   haiku: HaikuFn;
@@ -74,11 +75,11 @@ export class Observer {
 
   async ask(question: string): Promise<string> {
     const q = oneLine(question);
-    if (!q) throw new AskError('คำถามว่าง');
-    if (q.length > ASK_MAX_CHARS) throw new AskError(`คำถามยาวเกิน ${ASK_MAX_CHARS} ตัวอักษร`);
-    if (this.inFlight) throw new AskError('กำลังตอบคำถามก่อนหน้าอยู่');
+    if (!q) throw new AskError('คำถามว่าง', 'srv.observer.emptyQuestion');
+    if (q.length > ASK_MAX_CHARS) throw new AskError(`คำถามยาวเกิน ${ASK_MAX_CHARS} ตัวอักษร`, 'srv.observer.tooLong', { max: ASK_MAX_CHARS });
+    if (this.inFlight) throw new AskError('กำลังตอบคำถามก่อนหน้าอยู่', 'srv.observer.busy');
     const now = this.now();
-    if (this.opts.db.callsSince(now - 3_600_000, 'ask').length >= ASK_PER_HOUR) throw new AskError('ถามครบโควตาชั่วโมงนี้แล้ว');
+    if (this.opts.db.callsSince(now - 3_600_000, 'ask').length >= ASK_PER_HOUR) throw new AskError('ถามครบโควตาชั่วโมงนี้แล้ว', 'srv.observer.quota');
     const runners = Object.fromEntries(this.opts.runners().map((r) => [r.sessionId, r]));
     const digest = buildDigest(this.opts.sessions(), runners, this.opts.cards(), now);
     this.inFlight = true;
@@ -92,7 +93,8 @@ export class Observer {
       cost = r.costUsd;
       return r.text;
     } catch (e) {
-      throw new AskError(`ถาม Haiku ไม่สำเร็จ: ${e instanceof Error ? e.message : String(e)}`);
+      const msg = e instanceof Error ? e.message : String(e);
+      throw new AskError(`ถาม Haiku ไม่สำเร็จ: ${msg}`, 'srv.observer.haikuFailed', { msg });
     } finally {
       this.opts.db.logCall({ ts: now, kind: 'ask', ok, ms, costUsd: cost });
       this.inFlight = false;

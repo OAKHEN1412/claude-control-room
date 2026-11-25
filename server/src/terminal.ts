@@ -4,6 +4,7 @@
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CodedError } from './codedError';
 
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const TITLE_MAX = 60;
@@ -74,20 +75,22 @@ export class TerminalLauncher {
 
   /** Resolves with the launcher used ('wt' or 'cmd'); rejects with a user-facing message. */
   async open(req: TerminalRequest): Promise<'wt' | 'cmd'> {
-    if ((this.o.platform ?? process.platform) !== 'win32') throw new Error('เปิด terminal ได้เฉพาะบน Windows');
+    if ((this.o.platform ?? process.platform) !== 'win32') throw new CodedError('เปิด terminal ได้เฉพาะบน Windows', 'srv.terminal.windowsOnly');
     const cmd = crCommand(this.o.nodeBin ?? process.execPath, this.o.cliEntry ?? defaultCliEntry(), req.sessionId, this.o.port());
     const run = this.o.spawn ?? defaultSpawn;
     try {
       await this.start(run, buildWtLaunch(req, cmd));
       return 'wt';
     } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error(`เปิด Windows Terminal ไม่สำเร็จ: ${(e as Error).message}`);
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw new CodedError(`เปิด Windows Terminal ไม่สำเร็จ: ${(e as Error).message}`, 'srv.terminal.wtFailed', { msg: (e as Error).message });
+      }
     }
     try {
       await this.start(run, buildCmdLaunch(req, cmd));
       return 'cmd';
     } catch (e) {
-      throw new Error(`เปิด terminal ไม่สำเร็จ: ${(e as Error).message}`);
+      throw new CodedError(`เปิด terminal ไม่สำเร็จ: ${(e as Error).message}`, 'srv.terminal.failed', { msg: (e as Error).message });
     }
   }
 

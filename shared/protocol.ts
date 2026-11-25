@@ -19,10 +19,19 @@ export interface LimitInfo {
 
 /** Matches the usage / rate limit messages Claude Code writes as an API error. */
 export const LIMIT_TEXT_RE = /(hit your .{0,40}limit|usage limit|weekly limit|5-hour limit|rate limit|limit (?:reached|will reset)|limit resets?)/i;
+/** Values a UI string takes: `code` (srv.*) looks up a template with {name} placeholders; `text` is the Thai fallback. */
+export type VarMap = Record<string, string | number>;
+
 /** "ติดลิมิต · resets 1:30pm (Asia/Bangkok)" from the message; just "ติดลิมิต" when it has no reset part. */
 export function limitLabel(text: string): string {
+  return limitLabelMsg(text).text;
+}
+/** limitLabel with a stable code: srv.usage.limit (no reset part) or srv.usage.limitReset {reset}. */
+export function limitLabelMsg(text: string): { text: string; code: string; vars?: VarMap } {
   const m = /resets?.*$/i.exec(text.replace(/\s+/g, ' '));
-  return m ? `ติดลิมิต · ${m[0].trim()}` : 'ติดลิมิต';
+  if (!m) return { text: 'ติดลิมิต', code: 'srv.usage.limit' };
+  const reset = m[0].trim();
+  return { text: `ติดลิมิต · ${reset}`, code: 'srv.usage.limitReset', vars: { reset } };
 }
 
 export interface AgentInfo {
@@ -72,7 +81,9 @@ export interface SessionInfo {
 
 export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 export const EFFORT_LEVELS: readonly EffortLevel[] = ['low', 'medium', 'high', 'xhigh', 'max'];
-export const DEFAULT_EFFORT: EffortLevel = 'high';
+export const DEFAULT_EFFORT: EffortLevel = 'medium';
+/** Clip (video) jobs start one level higher than ordinary jobs. */
+export const CLIP_DEFAULT_EFFORT: EffortLevel = 'high';
 
 export interface ModelOption {
   id: string; // value used in commands
@@ -109,7 +120,15 @@ export const PERMISSION_MODE_LABELS: Record<PermissionMode, string> = {
   plan: 'วางแผนอย่างเดียว',
   bypassPermissions: 'ไม่ถามเลย (เสี่ยง)',
 };
+/** Stable code per PERMISSION_MODE_LABELS entry (same key): tx(PERMISSION_MODE_CODES[mode], undefined, PERMISSION_MODE_LABELS[mode]). */
+export const PERMISSION_MODE_CODES: Record<PermissionMode, string> = {
+  default: 'srv.perm.mode.default',
+  acceptEdits: 'srv.perm.mode.acceptEdits',
+  plan: 'srv.perm.mode.plan',
+  bypassPermissions: 'srv.perm.mode.bypassPermissions',
+};
 export const BYPASS_CONFIRM_TEXT = 'งานนี้จะแก้ไฟล์และรันคำสั่งได้โดยไม่ถาม — ยืนยัน?';
+export const BYPASS_CONFIRM_CODE = 'srv.perm.bypassConfirm';
 
 /** Quick-command chips (text sent as a normal user message). */
 export const QUICK_CHIPS: readonly string[] = ['ทำงานต่อ', 'ลุยเลย', 'เสร็จยัง', 'handoff', 'commit push'];
@@ -182,6 +201,8 @@ export interface WorklogCard {
 // ---- Stage 5: Clip Studio ----
 
 export const CLIP_STAGES = ['บท', 'storyboard', 'สร้าง scene', 'preview', 'พร้อม render'] as const;
+/** Stable code per entry of CLIP_STAGES (same index): the UI shows tx(CLIP_STAGE_CODES[i], undefined, CLIP_STAGES[i]). */
+export const CLIP_STAGE_CODES = ['srv.clip.stage.script', 'srv.clip.stage.storyboard', 'srv.clip.stage.scenes', 'srv.clip.stage.preview', 'srv.clip.stage.ready'] as const;
 export const CLIP_LENGTHS = ['30s', '60s', '90s', '3min'] as const;
 export const CLIP_RATIOS = ['16:9', '9:16', '1:1'] as const;
 export const CLIP_LANGS = ['th', 'en'] as const;
@@ -295,6 +316,8 @@ export interface LinkInfo {
   maxForwards: number;
   lastForwardAt: number | null; // epoch ms
   error?: string;
+  code?: string; // stable srv.* code of `error` when the server knows one
+  vars?: VarMap; // values for the {name} placeholders of `code`
 }
 
 
@@ -337,6 +360,8 @@ export interface MachineInfo {
   agent?: boolean; // 'ดู Claude บนเครื่องนี้': the main server keeps an SSH tunnel to the agent on this machine
   agentState?: AgentState; // connection of that tunnel + websocket (only when agent)
   agentError?: string; // Thai text when agentState === 'error'
+  agentCode?: string; // srv.* code of agentError
+  agentVars?: VarMap; // values for the {name} placeholders of agentCode
   agentCwds?: string[]; // folders the agent allows a new job in
 }
 
@@ -442,7 +467,7 @@ export type ServerMsg =
   | { type: 'runner'; serverTime: number; runner: RunnerState }
   | { type: 'runner_removed'; serverTime: number; sessionId: string; machineId?: string }
   | { type: 'cwds'; serverTime: number; cwds: string[] }
-  | { type: 'ack'; serverTime: number; reqId: string; ok: boolean; error?: string; sessionId?: string; linkId?: string; machineId?: string; answer?: string }
+  | { type: 'ack'; serverTime: number; reqId: string; ok: boolean; error?: string; code?: string; vars?: VarMap; sessionId?: string; linkId?: string; machineId?: string; answer?: string }
   | { type: 'links'; serverTime: number; links: LinkInfo[] } // broadcast on every change
   | { type: 'worklog'; serverTime: number; cards: WorklogCard[] }
   | { type: 'saved'; serverTime: number; sessions: SavedSession[] } // newest lastActivity first, <= 300, hidden included; debounced 1 s
@@ -480,4 +505,12 @@ export interface GalleryItem {
   topic: string; // clip job topic, else ''
   thumbUrl: string; // may 404 when ffmpeg fails: the UI shows a placeholder
   videoUrl: string;
+}
+
+/** One entry of the slash menu (a skill, a plugin skill, a built-in command or an MCP prompt). */
+export interface SlashCommand {
+  name: string; // without the leading "/"
+  description: string; // clipped server side
+  argumentHint: string;
+  builtin: boolean;
 }

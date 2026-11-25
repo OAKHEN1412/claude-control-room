@@ -7,16 +7,26 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocket, WebSocketServer } from 'ws';
-import { AGENT_TOKEN_HEADER, CLIP_PERMISSION_MODE, SERVER_PORT, type ClientMsg, type ClipJob, type LinkInfo, type MachineInfo, type MachineAttachment, type RunnerState, type SavedSession, type TailscalePeer, type ServerMsg, type SessionInfo, type WorklogCard } from '../../shared/protocol';
+import { AGENT_TOKEN_HEADER, CLIP_DEFAULT_EFFORT, CLIP_PERMISSION_MODE, SERVER_PORT, type ClientMsg, type ClipJob, type LinkInfo, type MachineInfo, type MachineAttachment, type RunnerState, type SavedSession, type TailscalePeer, type ServerMsg, type SessionInfo, type WorklogCard } from '../../shared/protocol';
 import { AgentsApi } from './agentsApi';
 import { AutoResume } from './autoresume';
 import { TerminalLauncher } from './terminal';
 import { ClipApi } from './api';
+import { SlashCommandApi } from './slashCommands';
 import { UploadApi } from './uploadApi';
 import { UploadStore } from './uploads';
 import { GalleryService } from './gallery';
 import { ClipService } from './clips';
-import { SEED_VOICES, VoiceService, readKeyFromVault } from './voice';
+import { SEED_VOICES, VoiceService } from './voice';
+import { effectiveExtraCwds, effectiveGalleryRoots, effectivePort, effectiveVideosDir, loadConfig } from './config';
+import { createDefaultChain } from './secretChain';
+import { SettingsApi } from './settingsApi';
+import { DoctorApi } from './doctorApi';
+import { runDoctor } from './doctor';
+import { UpdateApi } from './updateApi';
+import { UpdateChecker } from './updateCheck';
+import { ELEVEN_SECRET, ElevenKeyHolder, agentTokenGetter, busyCounts, readRootPackage, repoRootFrom } from './wiring';
+import { managedInstallProblem, realDeps, spawnUpdaterDetached } from '../../scripts/update-lib.mjs';
 import { dataDir, fileLogger, type LogFn } from './cmdlog';
 import { parseClientMsg, routeTarget } from './commands';
 import { cachedCwds } from './cwds';
@@ -25,7 +35,7 @@ import { WorklogDb } from './db';
 import { AskError, Observer } from './observer';
 import { MachineService } from './machines';
 import { assertLoopbackHost, isAgentMode } from './agent';
-import { RemoteHub, directFromEnv, envTokenSource, parseAgentToken } from './remote';
+import { RemoteHub, directFromEnv, envTokenSource } from './remote';
 import { Relay } from './relay';
 import { CommandError, Runner, type TurnEnd } from './runner';
 import { SavedService, backfillSaved } from './saved';
@@ -33,6 +43,7 @@ import { serveStatic } from './static';
 import { takeover, type TakeoverDeps } from './takeover';
 import { Watcher, type WatchedTurnEnd } from './watcher';
 import { Worklog } from './worklog';
+import { codeOf } from './codedError';
 import { UsageService } from './usage';
 import type { UsageSnapshot } from '../../shared/usage';
 import { projectsDir as claudeProjectsDir } from './paths';
@@ -76,7 +87,11 @@ export interface ServerOptions {
   api?: ClipApi; // stage 5: HTTP routes for Clip Studio
   gallery?: GalleryService; // video gallery routes (/api/gallery/*)
   agents?: AgentsApi; // subagent timeline route (/api/agents/<session>/<agent>/timeline)
+  slash?: SlashCommandApi; // GET /api/slash-commands
   uploads?: UploadApi; // chat attachments (POST /api/upload)
+  settings?: SettingsApi; // /api/settings (config.json + ElevenLabs key)
+  doctor?: DoctorApi; // /api/doctor
+  update?: UpdateApi; // /api/update (status, check, apply)
   staticDir?: string; // stage 6 production mode: serve the built web from here (SPA fallback)
   log?: LogFn;
   isPidAlive?: (pid: number) => boolean;
@@ -121,7 +136,11 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const httpServer = http.createServer((req, res) => {
     if (opts.gallery?.handle(req, res)) return;
     if (opts.agents?.handle(req, res)) return;
+    if (opts.slash?.handle(req, res)) return;
     if (opts.uploads?.handle(req, res)) return; // before ClipApi, which answers every other /api/ path
+    if (opts.settings?.handle(req, res)) return;
+    if (opts.doctor?.handle(req, res)) return;
+    if (opts.update?.handle(req, res)) return;
     if (opts.api?.handle(req, res)) return;
     if (req.method === 'GET' && req.url === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -154,13 +173,13 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const ask = async (ws: WebSocket, origin: string | undefined, msg: Extract<ClientMsg, { type: 'ask' }>): Promise<void> => {
     const base = { origin: origin ?? null, cmd: 'ask', reqId: msg.reqId, questionChars: msg.question.length };
     try {
-      if (!opts.observer) throw new AskError('ผู้ช่วยสรุปยังไม่เปิดใช้');
+      if (!opts.observer) throw new AskError('ผู้ช่วยสรุปยังไม่เปิดใช้', 'srv.observer.disabled');
       const answer = await opts.observer.ask(msg.question);
       log({ ...base, ok: true });
       send(ws, { type: 'ack', serverTime: now(), reqId: msg.reqId, ok: true, answer });
     } catch (e) {
       log({ ...base, ok: false, error: errText(e) });
-      send(ws, { type: 'ack', serverTime: now(), reqId: msg.reqId, ok: false, error: errText(e) });
+      send(ws, { type: 'ack', serverTime: now(), reqId: msg.reqId, ok: false, error: errText(e), ...codeOf(e) });
     }
   };
 
@@ -286,7 +305,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         if (!opts.terminal) throw new CommandError('terminal launcher is not enabled');
         // Runner jobs only: a terminal session already has its own window and stays read-only here.
         const st = runner.states().find((r) => r.sessionId === msg.sessionId);
-        if (!st || !st.alive) throw new CommandError('เปิดใน terminal ได้เฉพาะงานที่คุมจากเว็บและยังทำงานอยู่');
+        if (!st || !st.alive) throw new CommandError('เปิดใน terminal ได้เฉพาะงานที่คุมจากเว็บและยังทำงานอยู่', 'srv.term.webOnly');
         const info = watcher.snapshot().find((s) => s.sessionId === msg.sessionId);
         await opts.terminal.open({ sessionId: msg.sessionId, title: info?.title || info?.name || 'Claude job', cwd: st.cwd });
         return msg.sessionId;
@@ -331,7 +350,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
               sessionId: msg.sessionId,
               cwd: job.cwd,
               model: msg.model ?? job.builderModel,
-              effort: msg.effort ?? 'high',
+              effort: msg.effort ?? CLIP_DEFAULT_EFFORT,
               permissionMode: msg.permissionMode ?? CLIP_PERMISSION_MODE, // clip jobs default to acceptEdits
               remoteControl: msg.remoteControl,
             },
@@ -369,7 +388,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       send(ws, { ...ack, serverTime: now(), reqId: m.reqId });
     } catch (e) {
       log({ ...base, ok: false, error: errText(e) });
-      send(ws, { type: 'ack', serverTime: now(), reqId: m.reqId, ok: false, error: errText(e) });
+      send(ws, { type: 'ack', serverTime: now(), reqId: m.reqId, ok: false, error: errText(e), ...codeOf(e) });
     }
   };
 
@@ -385,7 +404,15 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     const parsed = parseClientMsg(raw);
     if (!parsed.ok) {
       log({ origin: origin ?? null, ok: false, error: parsed.error });
-      send(ws, { type: 'ack', serverTime: now(), reqId: parsed.reqId ?? '', ok: false, error: parsed.error });
+      send(ws, {
+        type: 'ack',
+        serverTime: now(),
+        reqId: parsed.reqId ?? '',
+        ok: false,
+        error: parsed.error,
+        ...(parsed.code !== undefined ? { code: parsed.code } : {}),
+        ...(parsed.vars ? { vars: parsed.vars } : {}),
+      });
       return;
     }
     const m = parsed.msg;
@@ -442,7 +469,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       send(ws, { type: 'ack', serverTime: now(), reqId: m.reqId, ok: true, sessionId });
     } catch (e) {
       log({ ...base, ok: false, error: errText(e) });
-      send(ws, { type: 'ack', serverTime: now(), reqId: m.reqId, ok: false, error: errText(e) });
+      send(ws, { type: 'ack', serverTime: now(), reqId: m.reqId, ok: false, error: errText(e), ...codeOf(e) });
     }
   };
 
@@ -628,8 +655,10 @@ async function main(): Promise<void> {
     await runAgent();
     return;
   }
-  const raw = Number(process.env.CR_PORT || process.env.PORT);
-  const port = Number.isInteger(raw) && raw > 0 ? raw : SERVER_PORT;
+  const cfgLoad = loadConfig();
+  for (const w of cfgLoad.warnings) console.warn(`config: ${w}`);
+  const cfg = cfgLoad.config;
+  const port = effectivePort(process.env, cfg, SERVER_PORT); // env beats config.json
   // Production mode (npm run start): also serve web/dist. Checked before anything is opened, so a logon start
   // while the dev server holds the port logs one line and exits instead of fighting it for the DB.
   const serveWeb = process.argv.includes('--serve-web');
@@ -640,9 +669,10 @@ async function main(): Promise<void> {
   const staticDir = serveWeb ? process.env.CR_STATIC_DIR || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../web/dist') : undefined;
   // The Runner is created below; the watcher only asks it when a poll runs.
   let runnerRef: Runner | null = null;
+  let clipsRef: ClipService | null = null; // late-bound like runnerRef: clips is created after the Runner
   const watcher = new Watcher({ keepAlive: (id) => runnerRef?.isAlive(id) === true });
   watcher.start();
-  const extra = (process.env.CR_EXTRA_CWDS ?? '').split(path.delimiter).filter((x) => x.trim() !== '');
+  const extra = effectiveExtraCwds(process.env, cfg);
   const allowedCwds = cachedCwds({ sessionCwds: () => watcher.snapshot().map((s) => s.cwd), extra });
   // CR_RUNNER_ARGS: JSON array appended to the claude command line (light mode for tests).
   const extraArgs = process.env.CR_RUNNER_ARGS ? (JSON.parse(process.env.CR_RUNNER_ARGS) as string[]) : [];
@@ -650,7 +680,17 @@ async function main(): Promise<void> {
   const uploadStore = new UploadStore(path.join(dataDir(), 'uploads'));
   const oldUploads = uploadStore.cleanup();
   if (oldUploads.length > 0) console.log(`uploads: removed ${oldUploads.length} old day folder(s)`);
-  const runner = new Runner({ allowedCwds, extraArgs, claudeBin: process.env.CR_CLAUDE_BIN, uploads: uploadStore });
+  // The ElevenLabs key comes from the secret chain (env, DPAPI store, vault CLI) and is kept in memory for clip children.
+  const chain = createDefaultChain();
+  const keys = new ElevenKeyHolder(chain);
+  const runner = new Runner({
+    allowedCwds,
+    extraArgs,
+    claudeBin: process.env.CR_CLAUDE_BIN,
+    uploads: uploadStore,
+    // A clip job resumed after a server restart gets its key again (the per-process jobEnv map is empty then).
+    envForSession: (id) => (clipsRef?.find(id) != null ? keys.clipEnv() : {}),
+  });
   runnerRef = runner;
   // Stage 4: SQLite worklog + the Haiku helper (no tools). CR_NO_SUMMARY=1 turns the model off (cards stay deterministic).
   const db = new WorklogDb(process.env.CR_DB_FILE || undefined);
@@ -668,19 +708,23 @@ async function main(): Promise<void> {
     : undefined;
   worklog.start();
   // Stage 5: voices (key read once from the vault, kept in memory only), style list, clip jobs.
-  db.seedVoices(SEED_VOICES, Date.now());
-  let elevenKey: string | null = null;
-  const keyReady = readKeyFromVault().then((k) => {
-    elevenKey = k;
-    console.log(k ? 'elevenlabs key: loaded' : 'elevenlabs key: not available');
-  });
-  void keyReady;
+  db.seedVoices([...SEED_VOICES, ...cfg.voices], Date.now());
+  await keys.refresh(); // logs "elevenlabs key: available|not available" only
   const log = fileLogger();
-  const voice = new VoiceService({ store: db, getKey: async () => (elevenKey ?? (await keyReady, elevenKey)), log });
+  const voice = new VoiceService({ store: db, getKey: () => chain.get(ELEVEN_SECRET), log });
   const api = new ClipApi({ voice, originAllowed });
-  const clips = new ClipService({ db, runner, sessions: () => watcher.snapshot(), lemo: () => api.lemoList() });
+  const clips = new ClipService({
+    db,
+    runner,
+    sessions: () => watcher.snapshot(),
+    lemo: () => api.lemoList(),
+    videosDir: effectiveVideosDir(process.env, cfg),
+    clipEnv: () => keys.clipEnv(),
+  });
+  clipsRef = clips;
   clips.pump(); // clips queued before a restart start as soon as a slot is free
-  const gallery = new GalleryService({ jobs: () => clips.jobs(), originAllowed });
+  const galleryRoots = effectiveGalleryRoots(process.env, cfg);
+  const gallery = new GalleryService({ jobs: () => clips.jobs(), originAllowed, roots: () => galleryRoots });
   const agents = new AgentsApi({ watcher, originAllowed });
   const cmdLog = fileLogger();
   const relay = new Relay({
@@ -704,27 +748,13 @@ async function main(): Promise<void> {
   const machines = new MachineService({ db, runner, log: cmdLog });
   const usage = new UsageService();
   usage.start();
-  // Other PCs' Claude sessions (machines with agent: true). Token source: env CR_AGENT_TOKEN_<MACHINEID> for now;
-  // then the vault. CR_REMOTE_DIRECT=1 is a dev switch (no ssh hop).
+  // Other PCs' Claude sessions (machines with agent: true). Token source: env CR_AGENT_TOKEN_<MACHINEID> first (and
+  // CR_AGENT_TOKEN with CR_REMOTE_DIRECT=1), then the secret chain (agent:<machineId>). CR_REMOTE_DIRECT=1 is a dev switch.
   const direct = directFromEnv(process.env);
   const envToken = envTokenSource(process.env, direct !== null);
-  // Vault fallback: `secrets get tools/cr-agent-<machineId>.enc` (one token line), read once per machine, memory only.
-  const vaultTokens = new Map<string, Promise<string | null>>();
-  const vaultToken = (id: string): Promise<string | null> => {
-    if (!/^[a-z0-9-]{1,64}$/.test(id)) return Promise.resolve(null);
-    let p = vaultTokens.get(id);
-    if (!p) {
-      p = readKeyFromVault(`tools/cr-agent-${id}.enc`, parseAgentToken).then((t) => {
-        if (!t) vaultTokens.delete(id); // retry on the next connect attempt
-        return t;
-      });
-      vaultTokens.set(id, p);
-    }
-    return p;
-  };
   const remote = new RemoteHub({
     machines: () => db.listMachines().map((m) => ({ id: m.id, name: m.name, host: m.host, user: m.user, keyPath: m.keyPath, agent: m.agent === true })),
-    getToken: (id) => envToken(id) ?? vaultToken(id),
+    getToken: agentTokenGetter(envToken, chain),
     direct,
     log: cmdLog,
   });
@@ -732,8 +762,31 @@ async function main(): Promise<void> {
   let listenPort = port;
   const terminal = new TerminalLauncher({ port: () => listenPort });
   const uploads = new UploadApi({ store: uploadStore, originAllowed });
-  const server = await startServer({ watcher, port, runner, allowedCwds, worklog, observer, clips, api, gallery, agents, uploads, relay, saved, machines, usage, terminal, remote, staticDir, log: cmdLog });
+  const slash = new SlashCommandApi({ runner, claudeBin: process.env.CR_CLAUDE_BIN, originAllowed });
+  const settings = new SettingsApi({ originAllowed, secrets: keys.secretsAdmin(), onChange: () => console.log('settings saved') });
+  const doctor = new DoctorApi({ originAllowed, run: () => runDoctor({ hasElevenKey: () => chain.has(ELEVEN_SECRET) }) });
+  // Update check: GitHub releases of the repo in the root package.json (CR_UPDATE_URL overrides). Started in production only.
+  const repoRoot = repoRootFrom(path.dirname(fileURLToPath(import.meta.url)));
+  const rootPkg = readRootPackage(path.join(repoRoot, 'package.json'));
+  const updateChecker = new UpdateChecker({
+    currentVersion: rootPkg.version,
+    repo: rootPkg.repo,
+    url: process.env.CR_UPDATE_URL,
+    enabled: () => loadConfig().config.update.check,
+  });
+  const updates = new UpdateApi({
+    originAllowed,
+    checker: updateChecker,
+    canUpdate: async () => {
+      const problem = await managedInstallProblem(repoRoot, realDeps());
+      return problem ? { ok: false, reason: problem } : { ok: true };
+    },
+    busy: () => busyCounts(runner.states(), clips.jobs(), (id) => runner.isAlive(id)),
+    startUpdater: async (tag) => spawnUpdaterDetached({ appDir: repoRoot, tag, pid: process.pid, port: listenPort, dataDir: dataDir(), skills: false }),
+  });
+  const server = await startServer({ watcher, port, runner, allowedCwds, worklog, observer, clips, api, gallery, agents, uploads, slash, settings, doctor, update: updates, relay, saved, machines, usage, terminal, remote, staticDir, log: cmdLog });
   listenPort = server.port;
+  if (serveWeb) updateChecker.start();
   // Live Runner jobs survive a server restart: remembered in SQLite, resumed idle here. CR_NO_AUTORESUME=1 turns it off.
   const autoResume =
     process.env.CR_NO_AUTORESUME === '1'
@@ -777,6 +830,8 @@ async function main(): Promise<void> {
     usage.stop();
     machines.stop();
     remote.stop();
+    updateChecker.stop();
+    updates.stop();
     watcher.stop();
     db.close();
     await server.close();

@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState, type ClipboardEvent } from 'react';
 import { chipsReducer, dragHasFiles, extractFiles, isUploading, pastedName, planAdd, readyIds, uploadFile, type Chip } from '../attach';
 import { apiBase } from '../useServer';
+import { t } from '../i18n';
 
 export interface Attachments {
   chips: Chip[];
@@ -9,7 +10,7 @@ export interface Attachments {
   uploading: boolean;
   problem: string | null; // last thing refused (too big, too many, attaching switched off)
   dragging: boolean; // a file is being dragged over the box
-  disabled: string | null; // Thai reason attaching is off, or null
+  disabled: string | null; // reason attaching is off (already in the current language), or null
   addFiles(files: File[]): void;
   remove(key: string): void;
   clear(): void;
@@ -72,7 +73,7 @@ export function useAttachments(opts: { disabledReason?: string | null } = {}): A
       const { file } = named[plan.accept[n]];
       uploadFile(file, chip.name, base).then(
         (u) => dispatch({ type: 'done', key: chip.key, id: u.id, name: u.name }),
-        (e: unknown) => dispatch({ type: 'fail', key: chip.key, error: e instanceof Error ? e.message : 'อัปโหลดไม่สำเร็จ' }),
+        (e: unknown) => dispatch({ type: 'fail', key: chip.key, error: e instanceof Error ? e.message : t('shell.attach.uploadFailed') }),
       );
     });
   }, []);

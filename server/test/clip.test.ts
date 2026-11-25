@@ -66,7 +66,7 @@ describe('stills cache', () => {
   });
 
   it('all five of our styles are defined', () => {
-    expect(OUR_STYLES.map((s) => s.id)).toEqual(['whiteboard', 'voxel3d', 'motion2d', 'screendemo', 'freshy']);
+    expect(OUR_STYLES.map((s) => s.id)).toEqual(['whiteboard', 'voxel3d', 'motion2d', 'screendemo', 'guide']);
   });
 });
 
@@ -150,7 +150,7 @@ describe('voice cache', () => {
     const db2 = new WorklogDb(file);
     db2.seedVoices(SEED_VOICES, 2);
     expect(db2.listVoices().map((v) => v.id)).toEqual([...SEED_VOICES.map((v) => v.id), 'ZZZZZZZZZZ']);
-    expect(db2.removeVoice('KhBRXgEQjvfdIyXOu7G3')).toBe(false);
+    expect(db2.removeVoice('21m00Tcm4TlvDq8ikWAM')).toBe(false);
     expect(db2.removeVoice('ZZZZZZZZZZ')).toBe(true);
     db2.close();
   });
@@ -224,9 +224,38 @@ describe('clip prompt', () => {
     expect(q).toContain('ห้ามเรียก ElevenLabs');
   });
 
-  it('freshy style forbids subagents', () => {
-    const f = OUR_STYLES.find((s) => s.id === 'freshy')!;
-    expect(buildClipPrompt({ req: req(), style: { kind: 'ours', style: f }, cwd: 'C:/v/x' })).toContain('ห้ามใช้ subagent');
+  it('noSubagents:true forbids subagents; an id of guide without the flag does not', () => {
+    const flagged = { ...ours, noSubagents: true };
+    expect(buildClipPrompt({ req: req(), style: { kind: 'ours', style: flagged }, cwd: 'C:/v/x' })).toContain('ห้ามใช้ subagent');
+    const named = { ...ours, id: 'guide' };
+    expect(buildClipPrompt({ req: req(), style: { kind: 'ours', style: named }, cwd: 'C:/v/x' })).not.toContain('ห้ามใช้ subagent');
+  });
+
+  it('the key line names the env variable and never a secrets command', () => {
+    const p = buildClipPrompt({ req: req(), style: { kind: 'ours', style: ours }, cwd: 'C:/v/x' });
+    expect(p).toContain('ELEVENLABS_API_KEY');
+    expect(p).toContain('xi-api-key');
+    expect(p).not.toContain('secrets get');
+    expect(p).not.toContain('tools/elevenlabs.enc');
+  });
+
+  it('a clip start hands clipEnv to the runner as extraEnv and never puts the key in the brief', () => {
+    const KEY = 'sk_test_0000000000000000';
+    const seen: { prompt: string; extraEnv?: Record<string, string> }[] = [];
+    const runner = {
+      start: (r: { prompt: string }, o?: { extraEnv?: Record<string, string> }) => {
+        seen.push({ prompt: r.prompt, extraEnv: o?.extraEnv });
+        return `sess-${seen.length}`;
+      },
+      send: () => undefined,
+      isAlive: () => true,
+    };
+    const base = { db: new WorklogDb(':memory:'), runner: runner as never, sessions: () => [], lemo: () => ({ installed: false, styles: [], categories: [] }), videosDir: tmpDir() };
+    new ClipService({ ...base, clipEnv: () => ({ ELEVENLABS_API_KEY: KEY }) }).start(req());
+    new ClipService({ ...base, db: new WorklogDb(':memory:'), videosDir: tmpDir() }).start(req());
+    expect(seen[0].extraEnv).toEqual({ ELEVENLABS_API_KEY: KEY });
+    expect(seen[0].prompt).not.toContain(KEY);
+    expect(seen[1].extraEnv).toEqual({});
   });
 
   it('slugify keeps Thai, drops punctuation, never returns empty', () => {
@@ -402,6 +431,14 @@ describe('loadOurStyles', () => {
   it('bad JSON or a non-array gives an empty list, never throws', () => {
     expect(loadOurStyles(mk('{not json'))).toEqual([]);
     expect(loadOurStyles(mk('{"id":"a"}'))).toEqual([]);
+  });
+
+  it('keeps noSubagents only when it is a boolean', () => {
+    const d = mk(JSON.stringify([{ ...good, id: 'x', noSubagents: true }, { ...good, id: 'y', noSubagents: 'yes' }, good]));
+    const [x, y, z] = loadOurStyles(d);
+    expect(x.noSubagents).toBe(true);
+    expect(y).not.toHaveProperty('noSubagents');
+    expect(z).not.toHaveProperty('noSubagents');
   });
 
   it('loads a valid file and skips invalid entries', () => {

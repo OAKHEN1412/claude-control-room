@@ -58,6 +58,8 @@ export interface ClipDeps {
   scanThrottleMs?: number;
   concurrency?: number; // generation jobs at once; default CR_CLIP_CONCURRENCY or 2
   newId?: () => string;
+  /** Env for the clip's child process only (the ElevenLabs key). Synchronous; never put into the brief, a log or the DB. */
+  clipEnv?: () => Record<string, string>;
 }
 
 export class ClipService extends EventEmitter {
@@ -109,7 +111,7 @@ export class ClipService extends EventEmitter {
    */
   enqueue(req: ClipStartInput): { queueId: string; sessionId: string | null } {
     const { name } = this.resolveStyle(req.styleId);
-    if (req.settings.voice && !req.voiceId) throw new CommandError('เลือกเสียงพากย์ก่อน (หรือปิดเสียงพากย์)');
+    if (req.settings.voice && !req.voiceId) throw new CommandError('เลือกเสียงพากย์ก่อน (หรือปิดเสียงพากย์)', 'srv.clip.voiceRequired');
     const queueId = this.newId();
     this.deps.db.enqueueClip(queueId, req, name, this.now());
     const started = this.pump();
@@ -119,7 +121,7 @@ export class ClipService extends EventEmitter {
 
   /** Removes a waiting clip. A clip that already started is a job, not a queue entry: close it from its session instead. */
   dequeue(id: string): void {
-    if (!this.deps.db.removeQueued(id)) throw new CommandError('คลิปนี้ไม่ได้อยู่ในคิวแล้ว (เริ่มทำไปแล้ว?)');
+    if (!this.deps.db.removeQueued(id)) throw new CommandError('คลิปนี้ไม่ได้อยู่ในคิวแล้ว (เริ่มทำไปแล้ว?)', 'srv.clip.notQueued');
     this.emit('change', this.jobs());
   }
 
@@ -154,14 +156,16 @@ export class ClipService extends EventEmitter {
   /** New preset (no id) or rename / update of an existing one. Returns the preset id. */
   savePreset(input: { id?: string; name: string; settings: ClipSettings; styleId: string }): string {
     const name = input.name.trim();
-    if (name === '') throw new CommandError('ตั้งชื่อชุดก่อน');
+    if (name === '') throw new CommandError('ตั้งชื่อชุดก่อน', 'srv.clip.presetNameRequired');
     this.resolveStyle(input.styleId); // refuses an unknown style
     const db = this.deps.db;
     const list = db.listPresets();
     const old = input.id ? db.getPreset(input.id) : null;
-    if (input.id && !old) throw new CommandError('ไม่พบชุดนี้ (ถูกลบไปแล้ว?)');
-    if (!old && list.length >= CLIP_PRESET_MAX) throw new CommandError(`เก็บชุดได้ไม่เกิน ${CLIP_PRESET_MAX} ชุด ลบชุดเก่าก่อน`);
-    if (list.some((p) => p.id !== old?.id && p.name === name)) throw new CommandError('มีชุดชื่อนี้อยู่แล้ว');
+    if (input.id && !old) throw new CommandError('ไม่พบชุดนี้ (ถูกลบไปแล้ว?)', 'srv.clip.presetMissing');
+    if (!old && list.length >= CLIP_PRESET_MAX) {
+      throw new CommandError(`เก็บชุดได้ไม่เกิน ${CLIP_PRESET_MAX} ชุด ลบชุดเก่าก่อน`, 'srv.clip.presetFull', { max: CLIP_PRESET_MAX });
+    }
+    if (list.some((p) => p.id !== old?.id && p.name === name)) throw new CommandError('มีชุดชื่อนี้อยู่แล้ว', 'srv.clip.presetNameTaken');
     const id = old?.id ?? this.newId();
     db.savePreset({ id, name, settings: input.settings, styleId: input.styleId, createdAt: old?.createdAt ?? this.now(), suggested: false });
     this.emit('change', this.jobs());
@@ -173,12 +177,14 @@ export class ClipService extends EventEmitter {
   /** New saved ending (no id) or rename / new text of an existing one. Returns its id. */
   saveOutro(input: { id?: string; name?: string; text: string }): string {
     const text = cleanOutroText(input.text);
-    if (text === '') throw new CommandError('พิมพ์คำท้ายก่อนบันทึก');
-    if ([...text].length > CLIP_OUTRO_MAX) throw new CommandError(`คำท้ายยาวเกิน ${CLIP_OUTRO_MAX} ตัวอักษร`);
+    if (text === '') throw new CommandError('พิมพ์คำท้ายก่อนบันทึก', 'srv.clip.outroRequired');
+    if ([...text].length > CLIP_OUTRO_MAX) throw new CommandError(`คำท้ายยาวเกิน ${CLIP_OUTRO_MAX} ตัวอักษร`, 'srv.clip.outroTooLong', { max: CLIP_OUTRO_MAX });
     const db = this.deps.db;
     const old = input.id ? db.listOutros().find((o) => o.id === input.id) : undefined;
-    if (input.id && !old) throw new CommandError('ไม่พบคำท้ายนี้ (ถูกลบไปแล้ว?)');
-    if (!old && db.listOutros().length >= CLIP_OUTRO_SAVED_MAX) throw new CommandError(`เก็บคำท้ายได้ไม่เกิน ${CLIP_OUTRO_SAVED_MAX} อัน ลบอันเก่าก่อน`);
+    if (input.id && !old) throw new CommandError('ไม่พบคำท้ายนี้ (ถูกลบไปแล้ว?)', 'srv.clip.outroMissing');
+    if (!old && db.listOutros().length >= CLIP_OUTRO_SAVED_MAX) {
+      throw new CommandError(`เก็บคำท้ายได้ไม่เกิน ${CLIP_OUTRO_SAVED_MAX} อัน ลบอันเก่าก่อน`, 'srv.clip.outroFull', { max: CLIP_OUTRO_SAVED_MAX });
+    }
     const rawName = (input.name ?? '').replace(/\s+/g, ' ').trim();
     const name = (rawName !== '' ? rawName : text.replace(/\s+/g, ' ')).slice(0, rawName !== '' ? CLIP_OUTRO_NAME_MAX : 20);
     const id = old?.id ?? this.newId();
@@ -188,12 +194,12 @@ export class ClipService extends EventEmitter {
   }
 
   deleteOutro(id: string): void {
-    if (!this.deps.db.deleteOutro(id)) throw new CommandError('ไม่พบคำท้ายนี้');
+    if (!this.deps.db.deleteOutro(id)) throw new CommandError('ไม่พบคำท้ายนี้', 'srv.clip.outroNotFound');
     this.emit('change', this.jobs());
   }
 
   deletePreset(id: string): void {
-    if (!this.deps.db.deletePreset(id)) throw new CommandError('ไม่พบชุดนี้');
+    if (!this.deps.db.deletePreset(id)) throw new CommandError('ไม่พบชุดนี้', 'srv.clip.presetNotFound');
     this.emit('change', this.jobs());
   }
 
@@ -206,17 +212,17 @@ export class ClipService extends EventEmitter {
     const [kind, id] = [styleId.slice(0, styleId.indexOf(':')), styleId.slice(styleId.indexOf(':') + 1)];
     if (kind === 'ours') {
       const s = ourStyleById(id);
-      if (!s) throw new CommandError('ไม่รู้จักสไตล์นี้');
+      if (!s) throw new CommandError('ไม่รู้จักสไตล์นี้', 'srv.clip.styleUnknown');
       return { style: { kind: 'ours', style: s }, name: s.name };
     }
     if (kind === 'lemo') {
       const list = this.deps.lemo();
-      if (!list.installed) throw new CommandError('ยังไม่ได้ติดตั้ง Lemo-Opuscar');
+      if (!list.installed) throw new CommandError('ยังไม่ได้ติดตั้ง Lemo-Opuscar', 'srv.clip.lemoNotInstalled');
       const s = list.styles.find((x) => x.id === id);
-      if (!s) throw new CommandError('ไม่พบสไตล์ Lemo นี้ (กด "โหลดรายการสไตล์ใหม่")');
+      if (!s) throw new CommandError('ไม่พบสไตล์ Lemo นี้ (กด "โหลดรายการสไตล์ใหม่")', 'srv.clip.lemoStyleMissing');
       return { style: { kind: 'lemo', style: s }, name: s.name };
     }
-    throw new CommandError('สไตล์ไม่ถูกต้อง');
+    throw new CommandError('สไตล์ไม่ถูกต้อง', 'srv.clip.styleInvalid');
   }
 
   /** Starts one clip right now, whatever the queue holds (the queue calls launch(); tests and callers that want it now call this). */
@@ -229,11 +235,11 @@ export class ClipService extends EventEmitter {
   /** Creates the folder, starts the session and records the job. Returns the new session id. Does not emit. */
   private launch(req: ClipStartInput): string {
     const { style, name } = this.resolveStyle(req.styleId);
-    if (req.settings.voice && !req.voiceId) throw new CommandError('เลือกเสียงพากย์ก่อน (หรือปิดเสียงพากย์)');
+    if (req.settings.voice && !req.voiceId) throw new CommandError('เลือกเสียงพากย์ก่อน (หรือปิดเสียงพากย์)', 'srv.clip.voiceRequired');
     const stamp = new Date(this.now()).toISOString().slice(0, 10);
     const slug = freeFolderName(this.videosDir, slugify(req.topic, `clip-${stamp}`));
     const cwd = path.join(this.videosDir, slug);
-    if (path.dirname(path.resolve(cwd)) !== this.videosDir) throw new CommandError('ชื่อโฟลเดอร์ไม่ถูกต้อง');
+    if (path.dirname(path.resolve(cwd)) !== this.videosDir) throw new CommandError('ชื่อโฟลเดอร์ไม่ถูกต้อง', 'srv.clip.folderInvalid');
     fs.mkdirSync(this.videosDir, { recursive: true });
     fs.mkdirSync(cwd); // not recursive: fails if somebody created it meanwhile
     const prompt = buildClipPrompt({ req, style, cwd });
@@ -248,7 +254,7 @@ export class ClipService extends EventEmitter {
           permissionMode: req.permissionMode ?? CLIP_PERMISSION_MODE,
           remoteControl: req.remoteControl === true,
         },
-        { trustedCwd: true },
+        { trustedCwd: true, extraEnv: this.deps.clipEnv?.() ?? {} },
       );
     } catch (e) {
       try {
@@ -280,10 +286,12 @@ export class ClipService extends EventEmitter {
   /** The "สั่ง render" button: only at พร้อม render, sends the fixed message to that job and nothing else. */
   render(sessionId: string): void {
     const job = this.deps.db.getClip(sessionId);
-    if (!job) throw new CommandError('ไม่ใช่งานคลิป');
-    if (job.stage < CLIP_STAGES.length - 1) throw new CommandError('งานยังไม่ถึงขั้น พร้อม render');
-    if (job.renderRequested) throw new CommandError('สั่ง render ไปแล้ว');
-    if (!this.deps.runner.isAlive(sessionId)) throw new CommandError('งานนี้ไม่ได้ทำงานอยู่ใต้ Runner (เปิดแชทเต็มจอแล้วรับช่วงก่อน)');
+    if (!job) throw new CommandError('ไม่ใช่งานคลิป', 'srv.clip.notClipJob');
+    if (job.stage < CLIP_STAGES.length - 1) throw new CommandError('งานยังไม่ถึงขั้น พร้อม render', 'srv.clip.notReady');
+    if (job.renderRequested) throw new CommandError('สั่ง render ไปแล้ว', 'srv.clip.renderAlready');
+    if (!this.deps.runner.isAlive(sessionId)) {
+      throw new CommandError('งานนี้ไม่ได้ทำงานอยู่ใต้ Runner (เปิดแชทเต็มจอแล้วรับช่วงก่อน)', 'srv.clip.notRunner');
+    }
     this.deps.runner.send(sessionId, RENDER_MESSAGE);
     this.deps.db.setClipRenderRequested(sessionId);
     this.emit('change', this.jobs());

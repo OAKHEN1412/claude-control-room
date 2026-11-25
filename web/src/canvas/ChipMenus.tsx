@@ -5,8 +5,11 @@ import type { LinkInfo } from '../../../shared/protocol';
 import type { Command } from '../components/Controls';
 import { MAX_FORWARDS_MAX, MAX_FORWARDS_MIN, linkActions, parseMaxForwards } from './linkWires';
 import { CloseIcon } from './icons';
+import { useT } from '../i18n';
+import { serverText } from '../i18n/serverMsg';
 
 export function ChipMenu({ x, y, label, onClose, children }: { x: number; y: number; label: string; onClose: () => void; children: ReactNode }) {
+  const t = useT();
   return (
     <div
       className="cv-menu cv-chrome"
@@ -23,7 +26,7 @@ export function ChipMenu({ x, y, label, onClose, children }: { x: number; y: num
     >
       <header className="cv-menu-head">
         <span className="cv-menu-title">{label}</span>
-        <button type="button" className="cv-pane-x" aria-label="ปิดเมนู" title="ปิด (Esc)" onClick={onClose}>
+        <button type="button" className="cv-pane-x" aria-label={t('canvas.chip.closeMenu')} title={t('canvas.chip.closeEsc')} onClick={onClose}>
           <CloseIcon />
         </button>
       </header>
@@ -43,6 +46,7 @@ export interface LinkMenuProps {
 }
 
 export function LinkMenu({ link, fromName, toName, x, y, command, onClose }: LinkMenuProps) {
+  const t = useT();
   const act = linkActions(link);
   const [max, setMax] = useState(String(link.maxForwards));
   const [busy, setBusy] = useState(false);
@@ -51,7 +55,7 @@ export function LinkMenu({ link, fromName, toName, x, y, command, onClose }: Lin
 
   const run = async (fn: () => ReturnType<Command>, closeAfter = true) => {
     if (!command) {
-      setError('ยังสั่งงานไม่ได้');
+      setError(t('canvas.chip.cantCommand'));
       return;
     }
     setBusy(true);
@@ -60,13 +64,13 @@ export function LinkMenu({ link, fromName, toName, x, y, command, onClose }: Lin
     setBusy(false);
     if (r.ok) {
       if (closeAfter) onClose();
-    } else setError(r.error ?? 'ทำไม่สำเร็จ ลองอีกครั้ง');
+    } else setError(serverText(r) || t('canvas.chip.failed'));
   };
 
   // The server has no "change max" message: the link is deleted and made again (its counter starts from 0).
   const applyMax = () =>
     run(async () => {
-      if (!command || parsed === null) return { ok: false, error: 'ใส่จำนวน 1–50' };
+      if (!command || parsed === null) return { ok: false, error: t('canvas.chip.maxRange', { min: MAX_FORWARDS_MIN, max: MAX_FORWARDS_MAX }) };
       const d = await command({ type: 'link_delete', linkId: link.id });
       if (!d.ok) return d;
       return command({ type: 'link_create', from: link.from, to: link.to, maxForwards: parsed });
@@ -76,20 +80,20 @@ export function LinkMenu({ link, fromName, toName, x, y, command, onClose }: Lin
     <ChipMenu x={x} y={y} label={`${fromName} → ${toName}`} onClose={onClose}>
       <div className="cv-menu-body">
         <div className="cc-muted">
-          ส่งต่อแล้ว {link.forwards}/{link.maxForwards} ครั้ง
-          {link.paused ? ' · หยุดชั่วคราว' : ''}
+          {t('canvas.chip.forwards', { count: link.forwards, max: link.maxForwards })}
+          {link.paused ? t('canvas.chip.pausedSuffix') : ''}
         </div>
-        {link.error && link.state !== 'ok' && <div className="cv-menu-err">{link.error}</div>}
+        {link.error && link.state !== 'ok' && <div className="cv-menu-err">{serverText(link)}</div>}
         <button type="button" className="cc-btn" disabled={busy} onClick={() => run(() => command!({ type: 'link_pause', linkId: link.id, paused: act.pausedNext }))}>
           {act.pauseLabel}
         </button>
         {act.canContinue && (
-          <button type="button" className="cc-btn is-accent" disabled={busy} title="นับใหม่จาก 0 แล้วส่งต่อได้อีก" onClick={() => run(() => command!({ type: 'link_resume', linkId: link.id }))}>
-            ไปต่อ
+          <button type="button" className="cc-btn is-accent" disabled={busy} title={t('canvas.chip.resumeHint')} onClick={() => run(() => command!({ type: 'link_resume', linkId: link.id }))}>
+            {t('canvas.chip.resume')}
           </button>
         )}
         <div className="cv-menu-max">
-          <label htmlFor={`cv-max-${link.id}`}>จำนวนครั้งสูงสุด</label>
+          <label htmlFor={`cv-max-${link.id}`}>{t('canvas.chip.maxLabel')}</label>
           <input
             id={`cv-max-${link.id}`}
             className="cc-input"
@@ -104,12 +108,12 @@ export function LinkMenu({ link, fromName, toName, x, y, command, onClose }: Lin
               if (e.key === 'Enter' && parsed !== null && parsed !== link.maxForwards) void applyMax();
             }}
           />
-          <button type="button" className="cc-btn" disabled={busy || parsed === null || parsed === link.maxForwards} title="ตั้งค่าใหม่ (เส้นถูกสร้างใหม่ นับจาก 0)" onClick={() => void applyMax()}>
-            ตั้ง
+          <button type="button" className="cc-btn" disabled={busy || parsed === null || parsed === link.maxForwards} title={t('canvas.chip.setHint')} onClick={() => void applyMax()}>
+            {t('canvas.chip.set')}
           </button>
         </div>
         <button type="button" className="cc-btn is-danger" disabled={busy} onClick={() => run(() => command!({ type: 'link_delete', linkId: link.id }))}>
-          ลบเส้น
+          {t('canvas.chip.delete')}
         </button>
         {error && (
           <div className="cn-error" role="alert">
@@ -133,25 +137,26 @@ export interface AttachMenuProps {
 }
 
 export function AttachMenu({ sessionName, machineName, sessionId, machineId, x, y, command, onClose }: AttachMenuProps) {
+  const t = useT();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const detach = async () => {
     if (!command) {
-      setError('ยังสั่งงานไม่ได้');
+      setError(t('canvas.chip.cantCommand'));
       return;
     }
     setBusy(true);
     const r = await command({ type: 'machine_detach', sessionId, machineId });
     setBusy(false);
     if (r.ok) onClose();
-    else setError(r.error ?? 'ทำไม่สำเร็จ ลองอีกครั้ง');
+    else setError(serverText(r) || t('canvas.chip.failed'));
   };
   return (
     <ChipMenu x={x} y={y} label={`${sessionName} ⇢ ${machineName}`} onClose={onClose}>
       <div className="cv-menu-body">
-        <div className="cc-muted">งานนี้สั่งงานบนเครื่อง {machineName} ผ่าน SSH ได้</div>
+        <div className="cc-muted">{t('canvas.chip.attachedTo', { machine: machineName })}</div>
         <button type="button" className="cc-btn is-danger" disabled={busy} onClick={() => void detach()}>
-          ยกเลิกเชื่อม
+          {t('canvas.chip.detach')}
         </button>
         {error && (
           <div className="cn-error" role="alert">

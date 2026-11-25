@@ -20,7 +20,7 @@ function session(id: string, over: Partial<SessionInfo> = {}): SessionInfo {
     sessionId: id,
     pid: 1,
     name: `name-${id}`,
-    cwd: 'C:\\Users\\Demo\\proj',
+    cwd: 'C:\\Users\\you\\proj',
     kind: 'interactive',
     title: `Job ${id}`,
     model: 'claude-haiku-5-5',
@@ -61,7 +61,7 @@ const perm = (at = 2000): PendingRequest => ({
 function runner(id: string, pending: PendingRequest[], over: Partial<RunnerState> = {}): RunnerState {
   return {
     sessionId: id,
-    cwd: 'C:\\Users\\Demo\\proj',
+    cwd: 'C:\\Users\\you\\proj',
     alive: true,
     pid: 9,
     busy: true,
@@ -117,7 +117,7 @@ describe('collectItems (payload mapping)', () => {
 
   it('falls back to the folder name when the runner has no watcher session yet', () => {
     const [it] = collectItems([], { s9: runner('s9', [perm()]) });
-    expect(it.job).toBe('…\\Demo\\proj');
+    expect(it.job).toBe('…\\you\\proj');
   });
 });
 

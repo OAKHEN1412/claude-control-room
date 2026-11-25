@@ -3,8 +3,8 @@ import type { AskQuestion, PendingRequest, RunnerState, ServerMsg, SessionInfo }
 import { CLIP_PERMISSION_MODE, DEFAULT_PERMISSION_MODE, MODEL_OPTIONS, PERMISSION_MODE_LABELS } from '../../shared/protocol';
 import { createCommander } from './commands';
 import {
-  ADOPT_HINT,
   CLOSE_CONFIRM_MS,
+  adoptHint,
   allAnswered,
   buildAnswers,
   canCloseJob,
@@ -32,7 +32,7 @@ function session(status: SessionInfo['status'], over: Partial<SessionInfo> = {})
     sessionId: 's1',
     pid: 5,
     name: 'job',
-    cwd: 'C:\\Users\\Demo\\Desktop\\proj',
+    cwd: 'C:\\Users\\you\\Desktop\\proj',
     kind: 'interactive',
     title: 't',
     model: 'claude-opus-5-5',
@@ -278,7 +278,7 @@ describe('close job ("ปิดงาน")', () => {
 
   it('a terminal session is disabled with the terminal reason; an ended job with the adopt hint; a live one has no title', () => {
     expect(closeJobTitle('readonly')).toBe('งานที่เปิดจาก terminal ต้องปิดจาก terminal');
-    expect(closeJobTitle('adoptable')).toBe(ADOPT_HINT);
+    expect(closeJobTitle('adoptable')).toBe(adoptHint());
     expect(closeJobTitle('runner')).toContain('ปิดงาน');
   });
 

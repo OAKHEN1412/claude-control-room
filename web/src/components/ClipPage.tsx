@@ -5,7 +5,7 @@ import {
   CLIP_SCRIPT_MODELS,
   CLIP_STAGES,
   CLIP_PERMISSION_MODE,
-  DEFAULT_EFFORT,
+  CLIP_DEFAULT_EFFORT,
   EFFORT_LEVELS,
   MODEL_OPTIONS,
   type ClipJob,
@@ -17,7 +17,9 @@ import {
   type EffortLevel,
   type PermissionMode,
 } from '../../../shared/protocol';
-import { RATIO_INFO, afterQueued, applyPreset, formMatchesPreset, isQueueKey, outroOf, outroProblem, suggestName, type ClipForm } from '../clipForm';
+import { RATIO_INFO, afterQueued, applyPreset, formMatchesPreset, isQueueKey, lengthLabel, outroOf, outroProblem, suggestName, type ClipForm } from '../clipForm';
+import { useLang, useT } from '../i18n';
+import { serverText } from '../i18n/serverMsg';
 import { jobFlags } from '../control';
 import { PermissionModeField, RemoteToggle } from './Controls';
 import { OutroPanel, PresetPanel, QueuePanel, RatioPicker } from './ClipParts';
@@ -26,18 +28,18 @@ import './control.css';
 import './clip.css';
 
 const API = apiBase();
-const LENGTHS: [ClipSettings['length'], string][] = [['30s', '30 วิ'], ['60s', '60 วิ'], ['90s', '90 วิ'], ['3min', '3 นาที']];
+const LENGTHS: ClipSettings['length'][] = ['30s', '60s', '90s', '3min'];
 
 interface OursCard { id: string; name: string; note: string; alt: string; stillUrl: string }
 interface LemoCard { id: string; name: string; category: string; thumbUrl: string | null }
-interface LemoView { installed: boolean; error?: string; categories: string[]; styles: LemoCard[] }
+interface LemoView { installed: boolean; error?: string; code?: string; vars?: Record<string, string | number>; categories: string[]; styles: LemoCard[] }
 interface Voice { id: string; name: string; builtin: boolean }
 interface Config { ours: OursCard[]; lemo: LemoView; voices: Voice[]; voiceModel: string; defaultSample: string }
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(`${API}${path}`, init);
-  const j = (await r.json()) as T & { ok?: boolean; error?: string };
-  if (!r.ok || j.ok === false) throw new Error(j.error ?? `HTTP ${r.status}`);
+  const j = (await r.json()) as T & { ok?: boolean; error?: string; code?: string; vars?: Record<string, string | number> };
+  if (!r.ok || j.ok === false) throw new Error(serverText(j) || `HTTP ${r.status}`);
   return j;
 }
 
@@ -46,9 +48,9 @@ function Chips<T extends string>({ label, items, value, onPick }: { label: strin
     <div className="cl-group">
       <div className="cl-grouplabel">{label}</div>
       <div className="cl-chips">
-        {items.map(([v, t]) => (
+        {items.map(([v, label]) => (
           <button key={v} type="button" className="cl-chip" aria-pressed={value === v} onClick={() => onPick(v)}>
-            {t}
+            {label}
           </button>
         ))}
       </div>
@@ -57,6 +59,8 @@ function Chips<T extends string>({ label, items, value, onPick }: { label: strin
 }
 
 export function ClipPage() {
+  const t = useT();
+  const [uiLang, setUiLang] = useLang();
   const server = useServer();
   const [cfg, setCfg] = useState<Config | null>(null);
   const [cfgErr, setCfgErr] = useState<string | null>(null);
@@ -78,8 +82,8 @@ export function ClipPage() {
   const [permMode, setPermMode] = useState<PermissionMode>(CLIP_PERMISSION_MODE);
   const [bypassOk, setBypassOk] = useState(false);
   const [rc, setRc] = useState(false);
-  const [effort, setEffort] = useState<EffortLevel>(DEFAULT_EFFORT);
-  const [voice, setVoice] = useState('KhBRXgEQjvfdIyXOu7G3');
+  const [effort, setEffort] = useState<EffortLevel>(CLIP_DEFAULT_EFFORT);
+  const [voice, setVoice] = useState('');
   const [sample, setSample] = useState('');
   const [newVoice, setNewVoice] = useState('');
   const [newName, setNewName] = useState('');
@@ -100,11 +104,12 @@ export function ClipPage() {
     try {
       const c = await api<Config>('/api/clip-config');
       setCfg(c);
+      setVoice((cur) => cur || c.voices[0]?.id || '');
       setCfgErr(null);
       setSample((s) => s || c.defaultSample);
       setCat((cur) => (c.lemo.categories.includes(cur) ? cur : (c.lemo.categories[0] ?? '')));
     } catch (e) {
-      setCfgErr(`โหลดค่าจากเซิร์ฟเวอร์ไม่ได้: ${(e as Error).message}`);
+      setCfgErr(t('clip.page.loadConfigErr', { msg: (e as Error).message }));
     }
   }, []);
   useEffect(() => {
@@ -131,7 +136,7 @@ export function ClipPage() {
         body: JSON.stringify({ voiceId: v.id, text: sample }),
       });
       setAudioUrl(`${API}${r.url}`);
-      setVoiceMsg(r.cached ? 'เล่นจาก cache (ไม่เสียเครดิต)' : 'สร้างเสียงใหม่จาก ElevenLabs แล้ว');
+      setVoiceMsg(r.cached ? t('clip.page.voiceCached') : t('clip.page.voiceNew'));
       setTimeout(() => void audio.current?.play().catch(() => undefined), 50);
     } catch (e) {
       setVoiceMsg((e as Error).message);
@@ -169,7 +174,7 @@ export function ClipPage() {
   const styleName = style.startsWith('ours:')
     ? cfg?.ours.find((o) => `ours:${o.id}` === style)?.name
     : cfg?.lemo.styles.find((l) => `lemo:${l.id}` === style)?.name;
-  const offline = server.demo ? 'โหมดตัวอย่าง' : server.connected ? null : 'ยังไม่ได้เชื่อมต่อเซิร์ฟเวอร์';
+  const offline = server.demo ? t('clip.page.demo') : server.connected ? null : t('clip.page.notConnected');
   const canQueue = !offline && topic.trim() !== '' && !!styleName && (!voiceOn || !!voice) && outroProblem(outro) === null;
 
   const form: ClipForm = useMemo(() => ({ length, ratio, lang, voice: voiceOn, music, cast, outro, style }), [length, ratio, lang, voiceOn, music, cast, outro, style]);
@@ -235,7 +240,7 @@ export function ClipPage() {
     setPresetMsg(null);
     const r = await server.command({ type: 'clip_preset_save', ...(id ? { id } : {}), name, settings: currentSettings(), styleId: style });
     if (!r.ok) {
-      setPresetMsg(r.error ?? 'บันทึกชุดไม่ได้');
+      setPresetMsg(serverText(r) || t('clip.page.presetSaveErr'));
       return false;
     }
     if (!id && r.sessionId) {
@@ -271,7 +276,7 @@ export function ClipPage() {
       ...jobFlags(permMode, bypassOk, rc),
     });
     if (!r.ok) {
-      setErr(r.error ?? 'เข้าคิวไม่ได้');
+      setErr(serverText(r) || t('clip.page.queueErr'));
       setTopic((t) => (t === '' ? sent.topic : t)); // give the topic back unless the user already typed the next one
       setPoints((p) => (p === '' ? sent.points : p));
     }
@@ -285,7 +290,7 @@ export function ClipPage() {
 
   const render = async (j: ClipJob) => {
     const r = await server.command({ type: 'clip_render', sessionId: j.sessionId });
-    setRenderMsg(r.ok ? null : (r.error ?? 'สั่ง render ไม่ได้'));
+    setRenderMsg(r.ok ? null : (serverText(r) || t('clip.page.renderErr')));
   };
 
   // Only ever called from the confirmed button: one clip_render per clip that is ready and not yet ordered.
@@ -293,14 +298,14 @@ export function ClipPage() {
     const failed: string[] = [];
     for (const j of jobs) {
       const r = await server.command({ type: 'clip_render', sessionId: j.sessionId });
-      if (!r.ok) failed.push(`${j.topic}: ${r.error ?? 'สั่งไม่ได้'}`);
+      if (!r.ok) failed.push(`${j.topic}: ${serverText(r) || t('clip.page.orderErr')}`);
     }
     setRenderMsg(failed.length > 0 ? failed.join(' · ') : null);
   };
 
   const removeQueued = async (q: ClipQueueItem) => {
     const r = await server.command({ type: 'clip_dequeue', id: q.id });
-    setRenderMsg(r.ok ? null : (r.error ?? 'เอาออกจากคิวไม่ได้'));
+    setRenderMsg(r.ok ? null : (serverText(r) || t('clip.page.dequeueErr')));
   };
 
   const lemoStyles = cfg?.lemo.styles.filter((s) => s.category === cat) ?? [];
@@ -320,19 +325,22 @@ export function ClipPage() {
         : lemoSel.thumbUrl
       : null;
   const voiceName = cfg?.voices.find((v) => v.id === voice)?.name;
-  const lengthLabel = LENGTHS.find((l) => l[0] === length)?.[1];
+  const lengthText = lengthLabel(length);
 
   return (
     <div className="cl-page">
       <header className="cl-head">
         <a className="cc-btn" href="/">
-          กลับ Control Room
+          {t('clip.page.back')}
         </a>
         <h1>Clip Studio</h1>
-        <span className="cc-muted">{server.connected ? 'เชื่อมต่อแล้ว' : 'ขาดการเชื่อมต่อ'}</span>
+        <span className="cc-muted">{server.connected ? t('clip.page.connected') : t('clip.page.disconnected')}</span>
+        <button type="button" className="cc-btn cr-lang" title={t('lang.toggle')} aria-label={t('lang.toggle')} onClick={() => setUiLang(uiLang === 'th' ? 'en' : 'th')}>
+          {uiLang === 'th' ? t('lang.en') : t('lang.th')}
+        </button>
       </header>
       <div className="cl-body">
-        <aside className="cl-side cl-left" aria-label="ชุดตั้งค่า">
+        <aside className="cl-side cl-left" aria-label={t('clip.parts.presetsHead')}>
           <PresetPanel
             presets={presets}
             selectedId={selected ? selected.id : null}
@@ -344,13 +352,13 @@ export function ClipPage() {
             onUpdate={async (p) => void (await savePreset(p.name, p.id))}
             onRename={(p, name) =>
               server.command({ type: 'clip_preset_save', id: p.id, name, settings: p.settings, styleId: p.styleId }).then((r) => {
-                setPresetMsg(r.ok ? null : (r.error ?? 'เปลี่ยนชื่อไม่ได้'));
+                setPresetMsg(r.ok ? null : (serverText(r) || t('clip.page.renameErr')));
                 return r.ok;
               })
             }
             onDelete={async (p) => {
               const r = await server.command({ type: 'clip_preset_delete', id: p.id });
-              if (!r.ok) setPresetMsg(r.error ?? 'ลบชุดไม่ได้');
+              if (!r.ok) setPresetMsg(serverText(r) || t('clip.page.presetDeleteErr'));
               else if (p.id === presetId) pickPreset(null);
             }}
           />
@@ -368,15 +376,15 @@ export function ClipPage() {
             </div>
           )}
 
-          <section className="cl-card" aria-label="หัวข้อ">
+          <section className="cl-card" aria-label={t('clip.page.ariaTopic')}>
             <div className="cl-field">
-              <label htmlFor="topic">หัวข้อคลิป</label>
+              <label htmlFor="topic">{t('clip.page.topicLabel')}</label>
               <input
                 id="topic"
                 ref={topicRef}
                 className="cc-input is-large"
                 value={topic}
-                placeholder="เช่น FRL unit คืออะไร ใช้ยังไง"
+                placeholder={t('clip.page.topicPh')}
                 onChange={(e) => setTopic(e.target.value)}
                 onKeyDown={onEnter}
                 maxLength={200}
@@ -385,15 +393,15 @@ export function ClipPage() {
               />
             </div>
             <div className="cl-field">
-              <label htmlFor="points">ประเด็นที่ต้องมี (ไม่บังคับ)</label>
-              <input id="points" className="cc-input" value={points} placeholder="คั่นด้วย , เช่น ความหมาย, ตัวอย่าง, ข้อควรระวัง" onChange={(e) => setPoints(e.target.value)} onKeyDown={onEnter} maxLength={1000} autoComplete="off" />
+              <label htmlFor="points">{t('clip.page.pointsLabel')}</label>
+              <input id="points" className="cc-input" value={points} placeholder={t('clip.page.pointsPh')} onChange={(e) => setPoints(e.target.value)} onKeyDown={onEnter} maxLength={1000} autoComplete="off" />
             </div>
             <div className="cl-create">
               <button type="button" className="cc-btn is-primary" disabled={!canQueue} title={offline ?? undefined} onClick={() => void queueClip()}>
-                เข้าคิว (Enter)
+                {t('clip.page.queueBtn')}
               </button>
               <span className="cc-muted">
-                ใช้ค่า: {selected ? `ชุด "${selected.name}"${modified ? ' (แก้แล้ว)' : ''}` : 'ตั้งเอง'} · {info.name} {ratio} · {lengthLabel}
+                {t('clip.page.using')} {selected ? t('clip.page.usingPreset', { name: selected.name, edited: modified ? t('clip.page.edited') : '' }) : t('clip.page.custom')} · {info.name} {ratio} · {lengthText}
               </span>
               {err && (
                 <span className="cl-err" role="alert">
@@ -403,40 +411,40 @@ export function ClipPage() {
             </div>
           </section>
 
-          <section className="cl-card cl-previewcard" aria-label="ตัวอย่างสไตล์">
-            <div className="cl-preview">{previewSrc ? <img src={previewSrc} alt={`ภาพนิ่งสไตล์ ${styleName ?? ''}`} /> : <span className="cl-ph">[ไม่มีภาพนิ่ง]</span>}</div>
+          <section className="cl-card cl-previewcard" aria-label={t('clip.page.ariaPreview')}>
+            <div className="cl-preview">{previewSrc ? <img src={previewSrc} alt={t('clip.page.stillAlt', { name: styleName ?? '' })} /> : <span className="cl-ph">{t('clip.page.noStill')}</span>}</div>
             <div className="cl-previewtext">
-              <b>{styleName ?? 'ยังไม่ได้เลือกสไตล์'}</b>
+              <b>{styleName ?? t('clip.page.noStyle')}</b>
             </div>
           </section>
 
-          <section className="cl-card" aria-label="ค่าปรับ">
+          <section className="cl-card" aria-label={t('clip.page.ariaSettings')}>
             <div className="cl-row">
-              <h2>ปรับค่า</h2>
+              <h2>{t('clip.page.settingsHead')}</h2>
               {selected ? (
                 <button type="button" className="cc-btn" aria-expanded={settingsOpen} aria-controls="cl-settings" onClick={() => setSettingsOpen((o) => !o)}>
-                  {settingsOpen ? 'ซ่อนค่าปรับ' : 'ปรับค่า…'}
+                  {settingsOpen ? t('clip.page.hideSettings') : t('clip.page.adjust')}
                 </button>
               ) : (
-                <span className="cc-muted">ไม่ได้ใช้ชุด — ตั้งทุกค่าที่นี่ หรือกด "+ บันทึกชุดใหม่" ทางซ้ายเพื่อเก็บไว้</span>
+                <span className="cc-muted">{t('clip.page.noPresetNote', { add: t('clip.parts.addPreset') })}</span>
               )}
             </div>
             {!expanded && (
               <p className="cl-note">
-                {[lengthLabel, `${info.name} ${ratio}`, lang === 'th' ? 'ไทย' : 'English', voiceOn ? 'มีเสียงพากย์' : 'ไม่มีเสียงพากย์', music ? 'มีเพลง' : 'ไม่มีเพลง', outro.on ? 'มีท้ายคลิป' : null, styleName].filter(Boolean).join(' · ')}
+                {[lengthText, `${info.name} ${ratio}`, lang === 'th' ? t('clip.form.langTh') : t('clip.form.langEn'), voiceOn ? t('clip.page.voiceOn') : t('clip.page.voiceOff'), music ? t('clip.page.musicOn') : t('clip.form.musicOff'), outro.on ? t('clip.form.hasOutro') : null, styleName].filter(Boolean).join(' · ')}
               </p>
             )}
             <div id="cl-settings" hidden={!expanded} className="cl-settings">
-              <Chips label="ความยาว" items={LENGTHS} value={length} onPick={setLength} />
+              <Chips label={t('clip.page.lengthGroup')} items={LENGTHS.map((l): [ClipSettings['length'], string] => [l, lengthLabel(l)])} value={length} onPick={setLength} />
               <div className="cl-group">
-                <div className="cl-grouplabel">สัดส่วน</div>
+                <div className="cl-grouplabel">{t('clip.page.ratioGroup')}</div>
                 <RatioPicker value={ratio} onPick={setRatio} />
               </div>
-              <Chips label="ภาษา" items={[['th', 'ไทย'], ['en', 'English']]} value={lang} onPick={setLang} />
-              <Chips label="เสียง" items={[['on', 'มีเสียงพากย์'], ['off', 'ไม่มีเสียงพากย์']]} value={voiceOn ? 'on' : 'off'} onPick={(v) => setVoiceOn(v === 'on')} />
-              <Chips label="เพลง" items={[['on', 'มีเพลง'], ['off', 'ไม่มีเพลง']]} value={music ? 'on' : 'off'} onPick={(v) => setMusic(v === 'on')} />
+              <Chips label={t('clip.page.langGroup')} items={[['th', t('clip.form.langTh')], ['en', t('clip.form.langEn')]]} value={lang} onPick={setLang} />
+              <Chips label={t('clip.form.voice')} items={[['on', t('clip.page.voiceOn')], ['off', t('clip.page.voiceOff')]]} value={voiceOn ? 'on' : 'off'} onPick={(v) => setVoiceOn(v === 'on')} />
+              <Chips label={t('clip.form.music')} items={[['on', t('clip.page.musicOn')], ['off', t('clip.form.musicOff')]]} value={music ? 'on' : 'off'} onPick={(v) => setMusic(v === 'on')} />
               <div className="cl-group">
-                <div className="cl-grouplabel">ตัวละคร</div>
+                <div className="cl-grouplabel">{t('clip.page.castGroup')}</div>
                 <div className="cl-chips">
                   {CLIP_CAST.map((c) => (
                     <button key={c} type="button" className="cl-chip" aria-pressed={cast.includes(c)} onClick={() => setCast((cur) => (cur.includes(c) ? cur.filter((x) => x !== c) : [...cur, c]))}>
@@ -445,8 +453,8 @@ export function ClipPage() {
                   ))}
                 </div>
               </div>
-              <div className="cl-sub" aria-label="ท้ายคลิป">
-                <h2>ท้ายคลิป</h2>
+              <div className="cl-sub" aria-label={t('clip.page.outroHead')}>
+                <h2>{t('clip.page.outroHead')}</h2>
                 <OutroPanel
                   outro={outro}
                   saved={server.clipOutros}
@@ -457,17 +465,17 @@ export function ClipPage() {
                   }}
                   onSave={async (text, name) => {
                     const r = await server.command({ type: 'clip_outro_save', text, ...(name.trim() !== '' ? { name: name.trim() } : {}) });
-                    setOutroMsg(r.ok ? null : (r.error ?? 'บันทึกคำท้ายไม่ได้'));
+                    setOutroMsg(r.ok ? null : (serverText(r) || t('clip.page.outroSaveErr')));
                     return r.ok;
                   }}
                   onRename={async (p: ClipOutroPhrase, name) => {
                     const r = await server.command({ type: 'clip_outro_save', id: p.id, name: name.trim(), text: p.text });
-                    setOutroMsg(r.ok ? null : (r.error ?? 'เปลี่ยนชื่อไม่ได้'));
+                    setOutroMsg(r.ok ? null : (serverText(r) || t('clip.page.renameErr')));
                     return r.ok;
                   }}
                   onDelete={async (p) => {
                     const r = await server.command({ type: 'clip_outro_delete', id: p.id });
-                    setOutroMsg(r.ok ? null : (r.error ?? 'ลบคำท้ายไม่ได้'));
+                    setOutroMsg(r.ok ? null : (serverText(r) || t('clip.page.outroDeleteErr')));
                   }}
                 />
                 {outroMsg && (
@@ -476,12 +484,12 @@ export function ClipPage() {
                   </div>
                 )}
               </div>
-              <div className="cl-sub" aria-label="สไตล์">
+              <div className="cl-sub" aria-label={t('clip.page.styleHead')}>
             <div className="cl-row">
-              <h2>สไตล์</h2>
+              <h2>{t('clip.page.styleHead')}</h2>
               <div className="cl-chips" style={{ flex: '0 0 auto' }}>
                 <button type="button" className="cl-chip" aria-pressed={src === 'ours'} onClick={() => setSrc('ours')}>
-                  สไตล์เดิมของเรา
+                  {t('clip.page.styleOurs')}
                 </button>
                 <button type="button" className="cl-chip" aria-pressed={src === 'lemo'} onClick={() => setSrc('lemo')}>
                   Lemo-Opuscar{cfg?.lemo.installed ? ` · ${cfg.lemo.styles.length}` : ''}
@@ -493,7 +501,7 @@ export function ClipPage() {
                 {cfg?.ours.map((o) => (
                   <button key={o.id} type="button" className="cl-style" aria-pressed={style === `ours:${o.id}`} onClick={() => setStyle(`ours:${o.id}`)}>
                     {stills[o.id] === false ? (
-                      <span className="cl-ph">[ยังไม่มีไฟล์ render — ภาพจะมาหลัง render แรก]</span>
+                      <span className="cl-ph">{t('clip.page.noRenderYet')}</span>
                     ) : (
                       <img src={`${API}${o.stillUrl}`} alt={o.alt} loading="lazy" onError={() => setStills((s) => ({ ...s, [o.id]: false }))} />
                     )}
@@ -508,10 +516,10 @@ export function ClipPage() {
             {src === 'lemo' && cfg && !cfg.lemo.installed && (
               <div className="cl-row">
                 <span className="cl-note" role="status">
-                  ยังไม่ได้ติดตั้ง Lemo-Opuscar{cfg.lemo.error ? ` (${cfg.lemo.error})` : ''}
+                  {t('clip.page.lemoNotInstalled', { err: serverText(cfg.lemo) ? ` (${serverText(cfg.lemo)})` : '' })}
                 </span>
                 <button type="button" className="cc-btn" onClick={() => void reload()}>
-                  โหลดรายการสไตล์ใหม่
+                  {t('clip.page.reloadStyles')}
                 </button>
               </div>
             )}
@@ -524,20 +532,20 @@ export function ClipPage() {
                     </button>
                   ))}
                   <button type="button" className="cc-btn" onClick={() => void reload()}>
-                    โหลดรายการสไตล์ใหม่
+                    {t('clip.page.reloadStyles')}
                   </button>
                 </div>
                 <div className="cl-grid">
                   {lemoStyles.map((s) => (
                     <button key={s.id} type="button" className="cl-style" aria-pressed={style === `lemo:${s.id}`} onClick={() => setStyle(`lemo:${s.id}`)}>
                       {s.thumbUrl ? (
-                        <img src={s.thumbUrl.startsWith('/') ? `${API}${s.thumbUrl}` : s.thumbUrl} alt={`ภาพนิ่งสไตล์ ${s.name}`} loading="lazy" />
+                        <img src={s.thumbUrl.startsWith('/') ? `${API}${s.thumbUrl}` : s.thumbUrl} alt={t('clip.page.stillAlt', { name: s.name })} loading="lazy" />
                       ) : (
-                        <span className="cl-ph">[ไม่มีภาพนิ่ง]</span>
+                        <span className="cl-ph">{t('clip.page.noStill')}</span>
                       )}
                       <span className="cl-style-text">
                         <b>{s.name}</b>
-                        <span>ออกแบบมาให้ Claude สร้าง</span>
+                        <span>{t('clip.page.lemoDesigned')}</span>
                       </span>
                     </button>
                   ))}
@@ -550,16 +558,16 @@ export function ClipPage() {
 
           <details className="cl-card cl-adv">
             <summary>
-              โมเดล · เสียงพากย์ · โหมด{' '}
+              {t('clip.page.advSummary')}{' '}
               <span className="cc-muted">
-                ({scriptModel} → {builderModel} · {voiceOn ? (voiceName ?? 'เลือกเสียง') : 'ไม่มีเสียงพากย์'})
+                ({scriptModel} → {builderModel} · {voiceOn ? (voiceName ?? t('clip.page.pickVoice')) : t('clip.page.voiceOff')})
               </span>
             </summary>
-            <section className="cl-card" aria-label="โมเดล">
-            <h2>โมเดล</h2>
+            <section className="cl-card" aria-label={t('clip.page.modelsHead')}>
+            <h2>{t('clip.page.modelsHead')}</h2>
             <div className="cl-row" style={{ justifyContent: 'flex-start', alignItems: 'flex-end' }}>
               <div className="cl-field">
-                <label htmlFor="m1">เขียนบท + storyboard</label>
+                <label htmlFor="m1">{t('clip.page.scriptModel')}</label>
                 <select id="m1" className="cc-sel" value={scriptModel} onChange={(e) => setScriptModel(e.target.value)}>
                   {scriptOpts.map((o) => (
                     <option key={o.id} value={o.id} disabled={!!o.disabled} title={o.disabled}>
@@ -569,7 +577,7 @@ export function ClipPage() {
                 </select>
               </div>
               <div className="cl-field">
-                <label htmlFor="m2">สร้าง scene (เขียนโค้ด)</label>
+                <label htmlFor="m2">{t('clip.page.builderModel')}</label>
                 <select id="m2" className="cc-sel" value={builderModel} onChange={(e) => setBuilderModel(e.target.value)}>
                   {builderOpts.map((o) => (
                     <option key={o.id} value={o.id}>
@@ -579,7 +587,7 @@ export function ClipPage() {
                 </select>
               </div>
               <div className="cl-field" style={{ flex: '1 1 240px' }}>
-                <label htmlFor="m5">โหมด</label>
+                <label htmlFor="m5">{t('clip.page.modeLabel')}</label>
                 <PermissionModeField
                   id="m5"
                   large
@@ -605,12 +613,12 @@ export function ClipPage() {
                 </select>
               </div>
             </div>
-            {style.startsWith('lemo:') && <p className="cl-note">ออกแบบมาให้ Claude สร้าง — โมเดลอื่นอาจทำสไตล์ไม่เหมือน</p>}
+            {style.startsWith('lemo:') && <p className="cl-note">{t('clip.page.lemoModelWarn')}</p>}
           </section>
-            <section className="cl-card" aria-label="เสียงพากย์">
+            <section className="cl-card" aria-label={t('clip.page.voiceHead')}>
             <div className="cl-row">
-              <h2>เสียงพากย์</h2>
-              <span className="cc-mono cc-muted">ElevenLabs · {cfg?.voiceModel ?? 'eleven_v3'} (หลัก)</span>
+              <h2>{t('clip.page.voiceHead')}</h2>
+              <span className="cc-mono cc-muted">{t('clip.page.voiceModel', { model: cfg?.voiceModel ?? 'eleven_v3' })}</span>
             </div>
             {cfg?.voices.map((v) => (
               <div key={v.id} className="cl-voice" data-on={voice === v.id}>
@@ -620,29 +628,29 @@ export function ClipPage() {
                 </button>
                 {!v.builtin && (
                   <button type="button" className="cc-btn" onClick={() => void removeVoice(v.id)}>
-                    ลบ
+                    {t('clip.parts.delete')}
                   </button>
                 )}
                 <button type="button" className={`cc-btn cl-play${playing === v.id ? ' is-busy' : ''}`} disabled={!!playing} onClick={() => void play(v)}>
-                  {playing === v.id ? 'กำลังสร้าง…' : 'ลองฟัง'}
+                  {playing === v.id ? t('clip.page.generating') : t('clip.page.listen')}
                 </button>
               </div>
             ))}
             <div className="cl-row" style={{ justifyContent: 'flex-start', alignItems: 'flex-end' }}>
               <div className="cl-field">
-                <label htmlFor="vid">เพิ่ม voice ID ของ ElevenLabs</label>
-                <input id="vid" className="cc-input cc-mono" value={newVoice} placeholder="วาง voice ID" onChange={(e) => setNewVoice(e.target.value)} />
+                <label htmlFor="vid">{t('clip.page.addVoiceId')}</label>
+                <input id="vid" className="cc-input cc-mono" value={newVoice} placeholder={t('clip.page.pasteVoiceId')} onChange={(e) => setNewVoice(e.target.value)} />
               </div>
               <div className="cl-field">
-                <label htmlFor="vname">ชื่อเรียก (ไม่บังคับ)</label>
+                <label htmlFor="vname">{t('clip.page.voiceName')}</label>
                 <input id="vname" className="cc-input" value={newName} onChange={(e) => setNewName(e.target.value)} maxLength={60} />
               </div>
               <button type="button" className="cc-btn" style={{ minHeight: 44 }} disabled={newVoice.trim() === ''} onClick={() => void addVoice()}>
-                เพิ่ม
+                {t('clip.page.add')}
               </button>
             </div>
             <div className="cl-field">
-              <label htmlFor="vtext">ประโยคทดลองฟัง ({[...sample].length}/120)</label>
+              <label htmlFor="vtext">{t('clip.page.sampleLabel', { n: [...sample].length })}</label>
               <input id="vtext" className="cc-input" value={sample} maxLength={120} onChange={(e) => setSample(e.target.value)} />
             </div>
             {audioUrl && <audio ref={audio} id="voice-audio" controls src={audioUrl} style={{ width: '100%' }} />}
@@ -651,12 +659,12 @@ export function ClipPage() {
                 {voiceMsg}
               </p>
             )}
-            <p className="cl-note">key ElevenLabs เป็นแบบ TTS อย่างเดียว (ดึงรายชื่อเสียงไม่ได้) จึงใส่ voice ID เอง · ลองฟังครั้งแรกใช้เครดิต ครั้งต่อไปประโยคเดิมใช้ cache</p>
+            <p className="cl-note">{t('clip.page.voiceHint')}</p>
           </section>
           </details>
         </main>
 
-        <aside className="cl-side cl-right" aria-label="คิวงานคลิป">
+        <aside className="cl-side cl-right" aria-label={t('clip.parts.queueHead')}>
           <QueuePanel jobs={server.clips} waiting={server.clipQueue} presets={presets} runners={server.runners} onRender={render} onRenderAll={renderAll} onRemove={removeQueued} />
           {renderMsg && (
             <div className="cl-err" role="alert">

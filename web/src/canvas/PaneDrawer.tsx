@@ -4,7 +4,9 @@ import { limitText } from '../limit';
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import type { RunnerState, SessionInfo } from '../../../shared/protocol';
 import type { Command } from '../components/Controls';
-import { STATUS_VAR, STATUS_WORD } from '../components/graphLayout';
+import { STATUS_VAR } from '../components/graphLayout';
+import { useT } from '../i18n';
+import { statusWord } from './canvasLayout';
 import { CloseIcon, PinIcon } from './icons';
 import { PaneView } from './PaneView';
 import type { PaneSource } from './paneStore';
@@ -49,11 +51,12 @@ export function PaneDrawer(p: PaneDrawerProps) {
     return () => window.removeEventListener('keydown', onKey);
   }, [p.onClose]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const t = useT();
   const { session } = p;
   const agent = session && p.source.agentId ? session.subagents.find((a) => a.id === p.source.agentId) : undefined;
   const status = agent ? agent.status : session?.status;
   const limit = agent ? null : limitText(session, p.runner);
-  const name = session ? (session.title && session.title !== '(ไม่มีชื่อ)' ? session.title : session.name) : 'ไม่พบงานนี้แล้ว';
+  const name = session ? (session.title && session.title !== '(ไม่มีชื่อ)' ? session.title : session.name) : t('canvas.drawer.gone');
 
   const down = (e: PointerEvent<HTMLDivElement>) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
@@ -85,14 +88,14 @@ export function PaneDrawer(p: PaneDrawerProps) {
       data-chrome="1"
       data-drawer="1"
       role="complementary"
-      aria-label={`ช่องดูงาน ${name}`}
+      aria-label={t('canvas.drawer.aria', { name })}
       style={{ width, ['--slide' as string]: `${SLIDE_MS}ms` }}
     >
       <div
         className="cv-drawer-edge"
         role="separator"
         aria-orientation="vertical"
-        aria-label="ปรับความกว้างช่อง (ลูกศรซ้าย/ขวา)"
+        aria-label={t('canvas.drawer.resize')}
         tabIndex={0}
         onPointerDown={down}
         onPointerMove={move}
@@ -103,12 +106,12 @@ export function PaneDrawer(p: PaneDrawerProps) {
       <header className="cv-drawer-head">
         <span className="cv-pane-dot" style={{ background: status ? STATUS_VAR[status] : 'var(--idle)' }} aria-hidden="true" />
         <span className="cv-pane-name">{name}</span>
-        <span className="cv-pane-sub">{limit ?? (agent ? `subagent · ${agent.description}` : session ? STATUS_WORD[session.status] : '')}</span>
-        <button type="button" className="cv-drawer-pin" onClick={p.onPin} disabled={!session} title="สร้างช่องบน canvas ที่ต่อกับบล็อกนี้">
+        <span className="cv-pane-sub">{limit ?? (agent ? `subagent · ${agent.description}` : session ? statusWord(session.status) : '')}</span>
+        <button type="button" className="cv-drawer-pin" onClick={p.onPin} disabled={!session} title={t('canvas.drawer.pinHint')}>
           <PinIcon />
-          ปักลง canvas
+          {t('canvas.drawer.pin')}
         </button>
-        <button type="button" className="cv-pane-x" aria-label="ปิดช่อง" title="ปิด (Esc)" onClick={p.onClose}>
+        <button type="button" className="cv-pane-x" aria-label={t('canvas.drawer.close')} title={t('canvas.drawer.closeEsc')} onClick={p.onClose}>
           <CloseIcon />
         </button>
       </header>

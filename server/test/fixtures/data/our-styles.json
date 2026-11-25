@@ -4,9 +4,16 @@
     "name": "Whiteboard 2D",
     "note": "fixture style whiteboard",
     "sourceDir": "C:/demo/whiteboard",
-    "workflowFiles": ["AGENTS.md", "tools/"],
-    "extraRules": ["2D whiteboard scenes"],
-    "renders": ["C:/demo/whiteboard/renders/full.mp4"],
+    "workflowFiles": [
+      "AGENTS.md",
+      "tools/"
+    ],
+    "extraRules": [
+      "2D whiteboard scenes"
+    ],
+    "renders": [
+      "C:/demo/whiteboard/renders/full.mp4"
+    ],
     "alt": "whiteboard sample"
   },
   {
@@ -14,9 +21,16 @@
     "name": "Voxel 3D film",
     "note": "fixture style voxel3d",
     "sourceDir": "C:/demo/voxel",
-    "workflowFiles": ["AGENTS.md", "STYLE.md"],
-    "extraRules": ["Use MeshLambertMaterial only"],
-    "renders": ["C:/demo/voxel/renders/draft.mp4"],
+    "workflowFiles": [
+      "AGENTS.md",
+      "STYLE.md"
+    ],
+    "extraRules": [
+      "Use MeshLambertMaterial only"
+    ],
+    "renders": [
+      "C:/demo/voxel/renders/draft.mp4"
+    ],
     "alt": "voxel sample"
   },
   {
@@ -24,9 +38,16 @@
     "name": "Motion graphics 2D",
     "note": "fixture style motion2d",
     "sourceDir": "C:/demo/motion",
-    "workflowFiles": ["AGENTS.md", "index.html"],
-    "extraRules": ["No characters"],
-    "renders": ["C:/demo/motion/renders/out.mp4"],
+    "workflowFiles": [
+      "AGENTS.md",
+      "index.html"
+    ],
+    "extraRules": [
+      "No characters"
+    ],
+    "renders": [
+      "C:/demo/motion/renders/out.mp4"
+    ],
     "alt": "motion sample"
   },
   {
@@ -34,19 +55,34 @@
     "name": "Screen demo",
     "note": "fixture style screendemo",
     "sourceDir": "C:/demo/screen",
-    "workflowFiles": ["AGENTS.md", "BRIEF.md"],
-    "extraRules": ["Music only, big cursor"],
-    "renders": ["C:/demo/screen/renders/out.mp4"],
+    "workflowFiles": [
+      "AGENTS.md",
+      "BRIEF.md"
+    ],
+    "extraRules": [
+      "Music only, big cursor"
+    ],
+    "renders": [
+      "C:/demo/screen/renders/out.mp4"
+    ],
     "alt": "screen sample"
   },
   {
-    "id": "freshy",
-    "name": "Freshy",
-    "note": "fixture style freshy",
-    "sourceDir": "C:/demo/freshy",
-    "workflowFiles": ["AGENTS.md", "BRIEF.md"],
-    "extraRules": ["ห้ามใช้ subagent: ทำและตรวจเองทั้งหมด"],
-    "renders": ["C:/demo/freshy/renders/full.mp4"],
-    "alt": "freshy sample"
+    "id": "guide",
+    "name": "Guide",
+    "note": "fixture style guide",
+    "sourceDir": "C:/demo/guide",
+    "workflowFiles": [
+      "AGENTS.md",
+      "BRIEF.md"
+    ],
+    "extraRules": [
+      "ห้ามใช้ subagent: ทำและตรวจเองทั้งหมด"
+    ],
+    "renders": [
+      "C:/demo/guide/renders/full.mp4"
+    ],
+    "alt": "guide sample",
+    "noSubagents": true
   }
 ]

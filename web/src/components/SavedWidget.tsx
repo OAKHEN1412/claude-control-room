@@ -2,11 +2,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { EFFORT_LEVELS, MODEL_OPTIONS, type EffortLevel, type PermissionMode, DEFAULT_PERMISSION_MODE } from '../../../shared/protocol';
 import { cwdTail, jobFlags } from '../control';
+import { getLanguage, useT } from '../i18n';
+import { serverText } from '../i18n/serverMsg';
 import type { SavedSession } from '../protocolNext';
 import {
-  DELETE_NOTE,
   SAVED_PAGE,
-  SOURCE_WORD,
   clockTime,
   countTab,
   filterSaved,
@@ -14,6 +14,7 @@ import {
   limitGroups,
   resumeDefaults,
   rowActions,
+  sourceWord,
   type SavedTab,
 } from '../savedList';
 import { PermissionModeField, type Command } from './Controls';
@@ -37,15 +38,16 @@ const CONFIRM_MS = 4000;
 const TOAST_MS = 6000;
 
 function ResumeForm({ s, busy, onSubmit, onCancel }: { s: SavedSession; busy: boolean; onSubmit: (model: string, effort: EffortLevel, mode: PermissionMode, confirmed: boolean) => void; onCancel: () => void }) {
+  const t = useT();
   const d = resumeDefaults(s);
   const [model, setModel] = useState(d.model);
   const [effort, setEffort] = useState<EffortLevel>(d.effort);
   const [mode, setMode] = useState<PermissionMode>(DEFAULT_PERMISSION_MODE);
   const [confirmed, setConfirmed] = useState(false);
   return (
-    <div className="sv-resume" role="group" aria-label="เปิดงานต่อ">
+    <div className="sv-resume" role="group" aria-label={t('panels.savedWidget.resumeAria')}>
       <label className="sv-f">
-        <span>โมเดล</span>
+        <span>{t('panels.savedWidget.model')}</span>
         <select className="cc-sel" value={model} onChange={(e) => setModel(e.target.value)}>
           {MODEL_OPTIONS.map((o) => (
             <option key={o.id} value={o.id} disabled={!!o.disabled} title={o.disabled}>
@@ -65,7 +67,7 @@ function ResumeForm({ s, busy, onSubmit, onCancel }: { s: SavedSession; busy: bo
         </select>
       </label>
       <div className="sv-f">
-        <span>โหมด</span>
+        <span>{t('panels.savedWidget.mode')}</span>
         <PermissionModeField
           value={mode}
           onCommit={(m, c) => {
@@ -76,10 +78,10 @@ function ResumeForm({ s, busy, onSubmit, onCancel }: { s: SavedSession; busy: bo
       </div>
       <div className="cc-row sv-resume-btns">
         <button type="button" className="cc-btn is-primary" disabled={busy} onClick={() => onSubmit(model, effort, mode, confirmed)}>
-          {busy ? 'กำลังเปิด…' : 'เปิดงาน'}
+          {busy ? t('panels.savedWidget.opening') : t('panels.savedWidget.openJob')}
         </button>
         <button type="button" className="cc-btn" disabled={busy} onClick={onCancel}>
-          ยกเลิก
+          {t('panels.savedWidget.cancel')}
         </button>
       </div>
     </div>
@@ -87,6 +89,7 @@ function ResumeForm({ s, busy, onSubmit, onCancel }: { s: SavedSession; busy: bo
 }
 
 export function SavedWidget({ saved, onCanvas, command, offlineReason, onGoto, onResumed }: SavedWidgetProps) {
+  const t = useT();
   const [tab, setTab] = useState<SavedTab>('all');
   const [query, setQuery] = useState('');
   const [limit, setLimit] = useState(SAVED_PAGE);
@@ -124,13 +127,13 @@ export function SavedWidget({ saved, onCanvas, command, offlineReason, onGoto, o
 
   const call = async (id: string, fn: (c: Command) => ReturnType<Command>): Promise<boolean> => {
     if (!command) {
-      say(offlineReason ?? 'ยังสั่งงานไม่ได้');
+      say(offlineReason ?? t('panels.savedWidget.notStarted'));
       return false;
     }
     setBusy(id);
     const r = await fn(command);
     setBusy(null);
-    if (!r.ok) say(r.error ?? 'ทำไม่สำเร็จ ลองอีกครั้ง');
+    if (!r.ok) say(serverText(r) || t('panels.savedWidget.failed'));
     return r.ok;
   };
 
@@ -148,18 +151,18 @@ export function SavedWidget({ saved, onCanvas, command, offlineReason, onGoto, o
 
   return (
     <div className="sv-root">
-      <div className="cs-tabs" role="tablist" aria-label="หมวดงานที่บันทึกไว้">
-        {(['all', 'trash'] as const).map((t) => (
-          <button key={t} type="button" role="tab" aria-selected={tab === t} className={`cs-tab${tab === t ? ' is-on' : ''}`} onClick={() => setTab(t)}>
-            {t === 'all' ? 'ทั้งหมด' : 'ถังขยะ'} <span className="sv-count">{countTab(saved, t)}</span>
+      <div className="cs-tabs" role="tablist" aria-label={t('panels.savedWidget.tabsAria')}>
+        {(['all', 'trash'] as const).map((tabKey) => (
+          <button key={tabKey} type="button" role="tab" aria-selected={tab === tabKey} className={`cs-tab${tab === tabKey ? ' is-on' : ''}`} onClick={() => setTab(tabKey)}>
+            {tabKey === 'all' ? t('panels.savedWidget.all') : t('panels.savedWidget.trash')} <span className="sv-count">{countTab(saved, tabKey)}</span>
           </button>
         ))}
       </div>
       <div className="sv-search">
-        <input className="cc-input" type="search" value={query} placeholder="ค้นหาชื่องาน โฟลเดอร์ โมเดล" aria-label="ค้นหางานที่บันทึกไว้" onChange={(e) => setQuery(e.target.value)} />
+        <input className="cc-input" type="search" value={query} placeholder={t('panels.savedWidget.searchPlaceholder')} aria-label={t('panels.savedWidget.searchAria')} onChange={(e) => setQuery(e.target.value)} />
       </div>
       <div className="sv-list" role="tabpanel">
-        {total === 0 && <div className="cc-muted sv-empty">{query ? 'ไม่พบงานที่ตรงกับคำค้น' : tab === 'trash' ? 'ถังขยะว่างอยู่' : 'ยังไม่มีงานที่บันทึกไว้'}</div>}
+        {total === 0 && <div className="cc-muted sv-empty">{query ? t('panels.savedWidget.noMatch') : tab === 'trash' ? t('panels.savedWidget.trashEmpty') : t('panels.savedWidget.noSaved')}</div>}
         {groups.map((g) => (
           <section key={g.key} className="sv-day" aria-label={g.label}>
             <h3 className="sv-dayhead">{g.label}</h3>
@@ -172,16 +175,16 @@ export function SavedWidget({ saved, onCanvas, command, offlineReason, onGoto, o
                   <li key={s.sessionId} className={`sv-row${s.live ? ' is-live' : ''}`}>
                     <div className="sv-main">
                       <div className="sv-title" title={s.title}>
-                        {s.live && <span className="sv-live" role="img" aria-label="กำลังเปิดอยู่" title="กำลังเปิดอยู่" />}
-                        <span className="sv-name">{s.title || '(ไม่มีชื่อ)'}</span>
+                        {s.live && <span className="sv-live" role="img" aria-label={t('panels.savedWidget.openNow')} title={t('panels.savedWidget.openNow')} />}
+                        <span className="sv-name">{s.title || t('panels.savedWidget.untitled')}</span>
                       </div>
                       <div className="sv-meta">
                         <span className="sv-cwd" title={s.cwd}>
                           {cwdTail(s.cwd)}
                         </span>
                         {model && <span>{model}</span>}
-                        <span className={`sv-src is-${s.source}`}>{SOURCE_WORD[s.source]}</span>
-                        <span className="sv-time" title={new Date(s.lastActivity).toLocaleString('th-TH')}>
+                        <span className={`sv-src is-${s.source}`}>{sourceWord(s.source)}</span>
+                        <span className="sv-time" title={new Date(s.lastActivity).toLocaleString(getLanguage() === 'th' ? 'th-TH' : 'en-US')}>
                           {clockTime(s.lastActivity)}
                         </span>
                       </div>
@@ -205,11 +208,11 @@ export function SavedWidget({ saved, onCanvas, command, offlineReason, onGoto, o
                           type="button"
                           className={`cc-btn sv-btn${armed === s.sessionId ? ' is-danger' : ''}`}
                           disabled={isBusy}
-                          aria-label={armed === s.sessionId ? `กดอีกครั้งเพื่อยืนยันลบ ${s.title}` : `ลบ ${s.title}`}
-                          title="เอาออกจากรายการ ไฟล์ยังอยู่"
+                          aria-label={armed === s.sessionId ? t('panels.savedWidget.confirmDeleteAria', { title: s.title }) : t('panels.savedWidget.deleteAria', { title: s.title })}
+                          title={t('panels.savedWidget.removeTitle')}
                           onClick={() => onDelete(s.sessionId)}
                         >
-                          {armed === s.sessionId ? 'ยืนยัน?' : 'ลบ'}
+                          {armed === s.sessionId ? t('panels.savedWidget.confirmQ') : t('panels.savedWidget.delete')}
                         </button>
                       )}
                     </div>
@@ -222,7 +225,7 @@ export function SavedWidget({ saved, onCanvas, command, offlineReason, onGoto, o
                           const flags = jobFlags(mode, confirmed, false);
                           const r = await (async () => {
                             if (!command) {
-                              say(offlineReason ?? 'ยังสั่งงานไม่ได้');
+                              say(offlineReason ?? t('panels.savedWidget.notStarted'));
                               return null;
                             }
                             setBusy(s.sessionId);
@@ -234,7 +237,7 @@ export function SavedWidget({ saved, onCanvas, command, offlineReason, onGoto, o
                           if (r.ok) {
                             setResuming(null);
                             onResumed(r.sessionId ?? s.sessionId);
-                          } else say(r.error ?? 'ทำไม่สำเร็จ ลองอีกครั้ง');
+                          } else say(serverText(r) || t('panels.savedWidget.failed'));
                         }}
                       />
                     )}
@@ -246,7 +249,7 @@ export function SavedWidget({ saved, onCanvas, command, offlineReason, onGoto, o
         ))}
         {shown < total && (
           <button type="button" className="cc-btn sv-more" onClick={() => setLimit((n) => n + SAVED_PAGE)}>
-            แสดงเพิ่ม ({shown}/{total})
+            {t('panels.savedWidget.showMore', { shown, total })}
           </button>
         )}
       </div>
@@ -255,7 +258,7 @@ export function SavedWidget({ saved, onCanvas, command, offlineReason, onGoto, o
           {toast}
         </div>
       )}
-      <div className="sv-foot cc-muted">{DELETE_NOTE}</div>
+      <div className="sv-foot cc-muted">{t('panels.savedWidget.deleteNote')}</div>
     </div>
   );
 }

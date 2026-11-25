@@ -19,3 +19,5 @@ spikes/stage6-data/
 .impeccable/hook.cache.json
 .claude/
 docs/lemo-styles.json
+
+.cr-install

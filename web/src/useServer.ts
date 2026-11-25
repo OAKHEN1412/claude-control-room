@@ -6,6 +6,7 @@ import { EMPTY_USAGE, type UsageSnapshot } from '../../shared/usage';
 import { createCommander, type CommandInput, type CommandResult, type Commander } from './commands';
 import { DEMO_MACHINE, demoSessions } from './demo';
 import { demoLinks, demoMachines, demoSaved } from './demoNext';
+import { t } from './i18n';
 
 export interface ServerState {
   sessions: SessionInfo[];
@@ -264,13 +265,13 @@ export function useServer(): ServerApi {
   stateRef.current = state;
   const command = useCallback(
     (cmd: CommandInput): Promise<CommandResult> =>
-      demo ? Promise.resolve({ ok: false, error: 'โหมดตัวอย่าง — สั่งงานไม่ได้' }) : commander.current!.send(withMachine(cmd, stateRef.current)),
+      demo ? Promise.resolve({ ok: false, error: t('shell.conn.demoNoCommand') }) : commander.current!.send(withMachine(cmd, stateRef.current)),
     [demo],
   );
 
   const ask = useCallback(
     (question: string): Promise<CommandResult> =>
-      demo ? Promise.resolve({ ok: false, error: 'โหมดตัวอย่าง — ถามไม่ได้' }) : commander.current!.send({ type: 'ask', question }, 100_000),
+      demo ? Promise.resolve({ ok: false, error: t('shell.conn.demoNoAsk') }) : commander.current!.send({ type: 'ask', question }, 100_000),
     [demo],
   );
 
@@ -297,7 +298,7 @@ export function useServer(): ServerApi {
       };
       ws.onclose = () => {
         dispatch({ kind: 'connected', connected: false });
-        commander.current?.failAll('ขาดการเชื่อมต่อ');
+        commander.current?.failAll(t('shell.conn.lost'));
         if (closing) return;
         timer = setTimeout(open, delay);
         delay = nextDelay(delay);

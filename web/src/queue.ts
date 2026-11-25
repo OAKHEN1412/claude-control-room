@@ -3,6 +3,7 @@
 //  - terminal items: unanswered prompts the watcher sees in a terminal session (read-only).
 import type { AskQuestion, PendingRequest, RunnerState, SessionInfo, WaitItem } from '../../shared/protocol';
 import { cwdTail } from './control';
+import { t } from './i18n';
 
 export interface QueueItem {
   key: string; // stable id: "r:<sessionId>:<requestId>" or "t:<sessionId>:<toolUseId>"
@@ -56,7 +57,7 @@ function fromPending(p: PendingRequest, r: RunnerState, s: SessionInfo | undefin
     toolName: p.toolName,
     label,
     detail: p.detail ?? '',
-    text: p.kind === 'ask' ? (questions[0]?.question ?? p.description) : `ขออนุญาต${labelHead(label)}`,
+    text: p.kind === 'ask' ? (questions[0]?.question ?? p.description) : t('shell.queue.permission', { what: labelHead(label) }),
     questions,
     requestId: p.requestId,
     at: p.at,
@@ -141,12 +142,12 @@ export function recommendedIndex(options: readonly { label: string }[]): number 
   return i >= 0 ? i : 0;
 }
 
-const LETTERS = ['ก', 'ข', 'ค', 'ง', 'จ', 'ฉ', 'ช', 'ซ', 'ฌ'];
-export const optionLetter = (i: number): string => LETTERS[i] ?? String(i + 1);
+/** Option marker: Thai letters in Thai, A, B, C... in English (letters come from the dictionary). */
+export const optionLetter = (i: number): string => [...t('shell.queue.letters')][i] ?? String(i + 1);
 
 /** Count line announced to screen readers. */
 export function countText(n: number): string {
-  return n === 0 ? 'ไม่มีคำถามรอตอบ' : `คำถามรอตอบ ${n} ข้อ`;
+  return n === 0 ? t('shell.queue.none') : t('shell.queue.count', { n });
 }
 
 export function titleWithCount(base: string, n: number): string {
@@ -157,7 +158,7 @@ export function titleWithCount(base: string, n: number): string {
 export function notificationText(it: QueueItem): { title: string; body: string } {
   const first = oneLine(it.text.split(/\r?\n/).find((l) => l.trim()) ?? it.text);
   return {
-    title: it.kind === 'ask' ? `คำถามจาก ${it.job}` : `ขออนุญาตจาก ${it.job}`,
+    title: it.kind === 'ask' ? t('shell.queue.askFrom', { job: it.job }) : t('shell.queue.permissionFrom', { job: it.job }),
     body: first.length > 140 ? `${first.slice(0, 139)}…` : first,
   };
 }

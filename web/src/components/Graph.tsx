@@ -13,6 +13,7 @@ import {
   type Box,
 } from './graphLayout';
 import { limitText } from '../limit';
+import { useT } from '../i18n';
 import './graph.css';
 
 export interface GraphProps {
@@ -45,6 +46,7 @@ interface NodeButtonProps {
 }
 
 function NodeButton(p: NodeButtonProps) {
+  useT(); // STATUS_WORD is read at render: subscribe so a language switch re-renders the node
   const color = STATUS_VAR[p.status];
   const live = p.status === 'running' || p.status === 'waiting';
   return (
@@ -84,6 +86,7 @@ function NodeButton(p: NodeButtonProps) {
 }
 
 export function Graph({ machine, machines, sessions, runners, selectedSessionId, selectedAgentId, onSelect, char, onCharClick }: GraphProps) {
+  const t = useT();
   const wrapRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 1000, h: 400 });
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
@@ -141,7 +144,7 @@ export function Graph({ machine, machines, sessions, runners, selectedSessionId,
         key={g.key}
         className="cg-stage"
         role="region"
-        aria-label={g.machineId ? `โครงข่ายงานของเครื่อง ${g.name}` : 'โครงข่ายงาน'}
+        aria-label={g.machineId ? t('panels.graph.machineNetwork', { name: g.name }) : t('panels.graph.network')}
         data-machine={g.machineId ?? undefined}
         style={{ width: layout.width, height: layout.height }}
       >
@@ -175,7 +178,7 @@ export function Graph({ machine, machines, sessions, runners, selectedSessionId,
               </div>
             </>
           ) : asking ? (
-            <button type="button" className="cg-char-btn" onClick={onCharClick} aria-label={`${char.label} — กดเพื่อเปิดคำถาม`} title="กดเพื่อเปิดคำถามที่รออยู่">
+            <button type="button" className="cg-char-btn" onClick={onCharClick} aria-label={t('panels.graph.charAria', { label: char.label })} title={t('panels.graph.charTitle')}>
               <Character state={char.state} />
             </button>
           ) : (
@@ -189,7 +192,7 @@ export function Graph({ machine, machines, sessions, runners, selectedSessionId,
           </div>
         </div>
 
-        {layout.empty && <div className="cg-empty">ไม่พบ session ที่เปิดอยู่</div>}
+        {layout.empty && <div className="cg-empty">{t('panels.graph.empty')}</div>}
 
         {layout.nodes.map((n) => {
           if (n.kind === 'collapsed') {
@@ -202,7 +205,7 @@ export function Graph({ machine, machines, sessions, runners, selectedSessionId,
                 aria-expanded={n.expanded}
                 onClick={() => toggle(n.sessionId)}
               >
-                {n.expanded ? 'ซ่อนตัวที่เสร็จแล้ว' : `เสร็จแล้ว ${n.count} ตัว · กดเพื่อดู`}
+                {n.expanded ? t('panels.graph.hideFinished') : t('panels.graph.moreFinished', { n: n.count })}
               </button>
             );
           }
@@ -221,7 +224,7 @@ export function Graph({ machine, machines, sessions, runners, selectedSessionId,
                 extras={modeBadges(runners?.[s.sessionId])}
                 thought={s.thought}
                 limit={limitText(s, runners?.[s.sessionId])}
-                label={`งาน ${s.title || s.name} ${STATUS_WORD[s.status]}`}
+                label={t('panels.graph.sessionNode', { name: s.title || s.name, status: STATUS_WORD[s.status] })}
                 pressed={s.sessionId === selectedSessionId}
                 onClick={() => onSelect(s.sessionId, null)}
               />
@@ -238,7 +241,7 @@ export function Graph({ machine, machines, sessions, runners, selectedSessionId,
               name={a.description}
               badge={badgeText(a.model, a.effort)}
               thought={a.thought}
-              label={`งานย่อย ${a.description} ${STATUS_WORD[a.status]}`}
+              label={t('panels.graph.subNode', { name: a.description, status: STATUS_WORD[a.status] })}
               pressed={s.sessionId === selectedSessionId && a.id === selectedAgentId}
               onClick={() => onSelect(s.sessionId, a.id)}
             />

@@ -22,6 +22,7 @@ class FakeChild extends EventEmitter implements ChildLike {
   pid = 4242;
   killedWith: unknown[] = [];
   written: Record<string, any>[] = [];
+  initializes: Record<string, any>[] = []; // the slash-menu initialize request, kept apart from the rest
   private buf = '';
   constructor() {
     super();
@@ -29,7 +30,9 @@ class FakeChild extends EventEmitter implements ChildLike {
       this.buf += d.toString();
       let i: number;
       while ((i = this.buf.indexOf('\n')) >= 0) {
-        this.written.push(JSON.parse(this.buf.slice(0, i)));
+        const w = JSON.parse(this.buf.slice(0, i));
+        if (w.type === 'control_request' && w.request?.subtype === 'initialize') this.initializes.push(w);
+        else this.written.push(w);
         this.buf = this.buf.slice(i + 1);
       }
     });
@@ -396,6 +399,27 @@ describe('Runner manager', () => {
     await until(() => children[0].written.length === 1);
     expect(children[0].written[0]).toEqual({ type: 'user', message: { role: 'user', content: 'hello' } });
     expect(r.states()[0]).toMatchObject({ sessionId: id, alive: true, busy: true, cwd: tmp });
+  });
+
+  it('extraEnv reaches only its own child; a normal start gets none; a re-launch in this process keeps it; the key is in no args or messages', () => {
+    const KEY = 'sk_test_0000000000000000';
+    const saved = process.env.ELEVENLABS_API_KEY;
+    delete process.env.ELEVENLABS_API_KEY;
+    try {
+      const r = mkRunner({ goneKeepMs: 60_000 });
+      const clip = r.start({ cwd: tmp, model: 'haiku', effort: 'low', prompt: 'brief' }, { trustedCwd: true, extraEnv: { ELEVENLABS_API_KEY: KEY } });
+      r.start({ cwd: tmp, model: 'haiku', effort: 'low', prompt: 'hi' });
+      expect(calls[0].env.ELEVENLABS_API_KEY).toBe(KEY);
+      expect(calls[1].env).not.toHaveProperty('ELEVENLABS_API_KEY');
+      expect(JSON.stringify(calls[0].args)).not.toContain(KEY);
+      expect(JSON.stringify(children[0].written)).not.toContain(KEY);
+      children[0].emit('exit', 0, null); // the clip job ends, then is resumed in this process
+      r.adopt({ sessionId: clip, cwd: tmp });
+      expect(calls[2].env.ELEVENLABS_API_KEY).toBe(KEY);
+    } finally {
+      if (saved === undefined) delete process.env.ELEVENLABS_API_KEY;
+      else process.env.ELEVENLABS_API_KEY = saved;
+    }
   });
 
   it('an ended job leaves states() after goneKeepMs and emits "removed"; a live idle job stays; a resumed one is kept', async () => {

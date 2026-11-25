@@ -2,8 +2,10 @@
 import { EFFORT_LEVELS, MODEL_OPTIONS, type EffortLevel } from '../../../shared/protocol';
 import { PermissionModeField, type Command } from '../components/Controls';
 import { AttachButton, AttachChips, DropOverlay } from '../components/AttachBar';
+import { Composer } from '../components/Composer';
 import { useNewJobForm } from '../components/useNewJobForm';
 import type { MachineInfo } from '../protocolNext';
+import { useT, t as tr } from '../i18n';
 import { CloseIcon } from './icons';
 import '../components/control.css';
 
@@ -16,25 +18,27 @@ export interface NewAiPopoverProps {
   onClose: () => void;
 }
 
-const offline: Command = () => Promise.resolve({ ok: false, error: 'ยังสั่งงานไม่ได้' });
+// Resolved when called, not at module load, so the message follows the current language.
+const offline: Command = () => Promise.resolve({ ok: false, error: tr('machine.ai.offline') });
 
 export function NewAiPopover({ cwds, command, disabledReason, onStarted, onClose, machines }: NewAiPopoverProps) {
-  const f = useNewJobForm({ cwds, command: command ?? offline, disabledReason: disabledReason ?? (command ? null : 'ยังสั่งงานไม่ได้'), onStarted, machines });
+  const t = useT();
+  const f = useNewJobForm({ cwds, command: command ?? offline, disabledReason: disabledReason ?? (command ? null : t('machine.ai.offline')), onStarted, machines });
   return (
-    <section className="cv-pop cv-pop--ai cv-chrome" data-chrome="1" role="dialog" aria-label="เพิ่มงาน AI" ref={f.att.bindHost} onKeyDown={(e) => e.key === 'Escape' && onClose()}>
+    <section className="cv-pop cv-pop--ai cv-chrome" data-chrome="1" role="dialog" aria-label={t('machine.ai.title')} ref={f.att.bindHost} onKeyDown={(e) => e.key === 'Escape' && onClose()}>
       <DropOverlay att={f.att} />
       <header className="cv-pop-head">
-        <span className="cv-pop-title">เพิ่มงาน AI</span>
-        <button type="button" className="cv-pane-x" aria-label="ปิด" title="ปิด (Esc)" onClick={onClose}>
+        <span className="cv-pop-title">{t('machine.ai.title')}</span>
+        <button type="button" className="cv-pane-x" aria-label={t('machine.ai.close')} title={t('machine.ai.closeEsc')} onClick={onClose}>
           <CloseIcon />
         </button>
       </header>
       <div className="cv-form">
         {f.machineChoices.length > 0 && (
           <label className="cv-field">
-            <span>รันบนเครื่อง</span>
-            <select className="cc-sel" value={f.machineId} onChange={(e) => f.setMachineId(e.target.value)} aria-label="เครื่องที่จะรันงาน">
-              <option value="">เครื่องนี้</option>
+            <span>{t('machine.ai.runOn')}</span>
+            <select className="cc-sel" value={f.machineId} onChange={(e) => f.setMachineId(e.target.value)} aria-label={t('machine.ai.machineAria')}>
+              <option value="">{t('machine.ai.thisMachine')}</option>
               {f.machineChoices.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.name}
@@ -44,9 +48,9 @@ export function NewAiPopover({ cwds, command, disabledReason, onStarted, onClose
           </label>
         )}
         <label className="cv-field">
-          <span>โฟลเดอร์งาน</span>
+          <span>{t('machine.ai.folder')}</span>
           <select className="cc-sel" value={f.cwd} onChange={(e) => f.setCwd(e.target.value)} autoFocus>
-            {f.choices.length === 0 && <option value="">ยังไม่มีโฟลเดอร์ที่รู้จัก</option>}
+            {f.choices.length === 0 && <option value="">{t('machine.ai.noFolders')}</option>}
             {f.choices.map((c) => (
               <option key={c} value={c}>
                 {c}
@@ -56,7 +60,7 @@ export function NewAiPopover({ cwds, command, disabledReason, onStarted, onClose
         </label>
         <div className="cv-field-row">
           <label className="cv-field" style={{ flex: '1 1 150px' }}>
-            <span>โมเดล</span>
+            <span>{t('machine.ai.model')}</span>
             <select className="cc-sel" value={f.model} onChange={(e) => f.setModel(e.target.value)}>
               {MODEL_OPTIONS.map((o) => (
                 <option key={o.id} value={o.id} disabled={!!o.disabled} title={o.disabled}>
@@ -77,26 +81,23 @@ export function NewAiPopover({ cwds, command, disabledReason, onStarted, onClose
           </label>
         </div>
         <div className="cv-field">
-          <span>โหมด</span>
+          <span>{t('machine.ai.mode')}</span>
           <PermissionModeField value={f.permMode} onCommit={f.commitMode} />
         </div>
         <label className="cv-field">
-          <span>สั่งงาน</span>
-          <textarea
-            className="cc-input cv-prompt"
-            rows={3}
+          <span>{t('machine.ai.prompt')}</span>
+          <Composer
+            submitOn="ctrl-enter"
             value={f.prompt}
-            placeholder="พิมพ์งานที่จะให้ทำ (Ctrl+Enter เพื่อเริ่ม)"
-            onChange={(e) => f.setPrompt(e.target.value)}
+            placeholder={t('machine.ai.placeholder')}
+            onChange={f.setPrompt}
             onPaste={f.att.onPaste}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.nativeEvent.isComposing) void f.start();
-            }}
+            onSubmit={() => void f.start()}
           />
         </label>
         <div className="cc-row">
           <AttachButton att={f.att} />
-          <span className="cc-muted">แนบไฟล์ · ลากไฟล์มาวาง · วางรูปด้วย Ctrl+V</span>
+          <span className="cc-muted">{t('machine.ai.attachHint')}</span>
         </div>
         <AttachChips att={f.att} />
         {f.error && (
@@ -106,10 +107,10 @@ export function NewAiPopover({ cwds, command, disabledReason, onStarted, onClose
         )}
         <div className="cc-row" style={{ justifyContent: 'flex-end' }}>
           <button type="button" className="cc-btn" onClick={onClose}>
-            ปิด
+            {t('machine.ai.close')}
           </button>
           <button type="button" className="cc-btn is-primary" disabled={!f.canStart} title={f.disabledReason ?? undefined} onClick={() => void f.start()}>
-            {f.working ? 'กำลังเริ่ม…' : 'เริ่มงาน'}
+            {f.working ? t('machine.ai.starting') : t('machine.ai.start')}
           </button>
         </div>
       </div>

@@ -15,6 +15,7 @@ export interface OurStyle {
   extraRules: string[]; // style-specific rules for the brief
   renders: string[]; // candidate render files for the sample still
   alt: string;
+  noSubagents?: boolean; // true: the brief forbids subagents (the whole clip is written and built in one session)
 }
 
 const isStrings = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === 'string');
@@ -34,6 +35,7 @@ function toOurStyle(v: unknown): OurStyle | null {
     extraRules: o.extraRules as string[],
     renders: o.renders as string[],
     alt: o.alt as string,
+    ...(typeof o.noSubagents === 'boolean' ? { noSubagents: o.noSubagents } : {}),
   };
 }
 

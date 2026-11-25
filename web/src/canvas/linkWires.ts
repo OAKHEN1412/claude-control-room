@@ -2,6 +2,8 @@
 // the actions its menu offers, and detection of fresh forwards (for the 1.5 s flow animation). Pure.
 import type { LinkInfo } from '../../../shared/protocol';
 import type { CanvasLayout, Point } from './canvasLayout';
+import { t } from '../i18n';
+import { serverText } from '../i18n/serverMsg';
 
 const r2 = (v: number): number => Math.round(v * 100) / 100;
 
@@ -114,16 +116,17 @@ const trunc = (s: string, n: number): string => (s.length > n ? `${s.slice(0, n 
 
 export function linkChip(link: LinkInfo): LinkChip {
   const count = `${link.forwards}/${link.maxForwards}`;
-  if (link.paused) return { text: `⏸ ${count}`, tone: 'paused', title: `หยุดชั่วคราว (ส่งต่อแล้ว ${count} ครั้ง)` };
+  const err = serverText(link);
+  if (link.paused) return { text: `⏸ ${count}`, tone: 'paused', title: t('canvas.link.pausedTitle', { count }) };
   switch (link.state) {
     case 'limit':
-      return { text: `ครบ ${link.maxForwards} ครั้ง · กดไปต่อ`, tone: 'limit', title: `ส่งต่อครบ ${link.maxForwards} ครั้งแล้ว กดเพื่อไปต่อ` };
+      return { text: t('canvas.link.limitText', { max: link.maxForwards }), tone: 'limit', title: t('canvas.link.limitTitle', { max: link.maxForwards }) };
     case 'rate':
-      return { text: `⚠ ${trunc(link.error || 'ส่งถี่เกินไป', ERR_CHARS)}`, tone: 'bad', title: link.error || 'ส่งถี่เกินไป — หยุดไว้ก่อน กดเพื่อไปต่อ' };
+      return { text: `⚠ ${trunc(err || t('canvas.link.rateFallback'), ERR_CHARS)}`, tone: 'bad', title: err || t('canvas.link.rateTitle') };
     case 'error':
-      return { text: `⚠ ${trunc(link.error || 'ส่งต่อไม่สำเร็จ', ERR_CHARS)}`, tone: 'bad', title: link.error || 'ส่งต่อไม่สำเร็จ' };
+      return { text: `⚠ ${trunc(err || t('canvas.link.errorFallback'), ERR_CHARS)}`, tone: 'bad', title: err || t('canvas.link.errorFallback') };
     default:
-      return { text: `↻ ${count}`, tone: 'ok', title: `ส่งคำตอบต่อแล้ว ${count} ครั้ง` };
+      return { text: `↻ ${count}`, tone: 'ok', title: t('canvas.link.okTitle', { count }) };
   }
 }
 
@@ -137,7 +140,7 @@ export interface LinkActions {
 
 export function linkActions(link: LinkInfo): LinkActions {
   return {
-    pauseLabel: link.paused ? 'ทำต่อ' : 'หยุดชั่วคราว',
+    pauseLabel: link.paused ? t('canvas.link.resume') : t('canvas.link.pause'),
     pausedNext: !link.paused,
     canContinue: link.state !== 'ok',
   };
