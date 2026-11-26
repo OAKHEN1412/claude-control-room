@@ -1,5 +1,7 @@
 // Timeline -> terminal lines, the `cr ls` table and colours. Pure (colour is a flag), unit-tested.
 // Same look as the web pane (web/src/terminalLines.ts): `> user`, `⏺ assistant text`, `⏺ Tool(args)`, `  ⎿ error`.
+import type { AccountInfo } from '../../shared/accounts.ts';
+import { TERMINAL_ACCOUNT_ID } from '../../shared/accounts.ts';
 import type { RunnerState, SessionInfo, TimelineEvent } from '../../shared/protocol.ts';
 
 export const MAX_ARGS = 72;
@@ -127,6 +129,8 @@ export interface JobRow {
   state: string;
   title: string;
   cwd: string;
+  /** Profile name the web job runs as (only when its RunnerState has an accountId). */
+  account?: string;
 }
 
 const STATUS_TH: Record<string, string> = { running: 'ทำงาน', waiting: 'รอคุณ', idle: 'ว่าง', done: 'จบ', unreadable: 'อ่านไม่ได้' };
@@ -138,13 +142,23 @@ export function runnerStateText(r: RunnerState): string {
 }
 
 /** Runner jobs first (they can be attached), then terminal sessions (read-only; `all` includes finished ones). */
-export function listRows(sessions: readonly SessionInfo[], runners: readonly RunnerState[], all: boolean): JobRow[] {
+/** Display name of a profile id: the terminal login shows `terminal`; an id the list does not know is shown as is. */
+export function profileLabel(id: string, accounts: readonly AccountInfo[] = []): string {
+  if (id === TERMINAL_ACCOUNT_ID) return TERMINAL_ACCOUNT_ID;
+  return accounts.find((a) => a.id === id)?.name ?? id;
+}
+
+export function listRows(sessions: readonly SessionInfo[], runners: readonly RunnerState[], all: boolean, accounts: readonly AccountInfo[] = []): JobRow[] {
   const rows: JobRow[] = [];
   const titleOf = (id: string): string => {
     const s = sessions.find((x) => x.sessionId === id);
     return s ? s.title || s.name : '';
   };
-  for (const r of runners) rows.push({ id: r.sessionId, kind: 'web', state: runnerStateText(r), title: titleOf(r.sessionId), cwd: r.cwd });
+  for (const r of runners) {
+    const row: JobRow = { id: r.sessionId, kind: 'web', state: runnerStateText(r), title: titleOf(r.sessionId), cwd: r.cwd };
+    if (r.accountId) row.account = profileLabel(r.accountId, accounts);
+    rows.push(row);
+  }
   for (const s of sessions) {
     if (runners.some((r) => r.sessionId === s.sessionId)) continue;
     if (!all && s.status === 'done') continue;
@@ -157,13 +171,16 @@ export function formatList(rows: readonly JobRow[], p: Paint, width = 100): stri
   if (rows.length === 0) return [p.dim('ไม่มีงาน (cr new "…" เพื่อเริ่ม)')];
   const out: string[] = [];
   const stateW = Math.max(...rows.map((r) => [...r.state].length), 4);
-  const titleW = Math.max(12, Math.min(40, width - 8 - 6 - 2 - stateW - 8 - 20));
+  // the profile column exists only when some row runs as a profile; without it the layout is unchanged
+  const acctW = Math.max(0, ...rows.map((r) => [...(r.account ?? '')].length));
+  const titleW = Math.max(12, Math.min(40, width - 8 - 6 - 2 - stateW - 8 - 20 - (acctW > 0 ? acctW + 2 : 0)));
   for (const r of rows) {
     const kind = r.kind === 'web' ? p.green('web ') : p.dim('term');
     const state = r.state + ' '.repeat(Math.max(0, stateW - [...r.state].length));
     const title = clip(r.title || '(ไม่มีชื่อ)', titleW);
     const pad = ' '.repeat(Math.max(0, titleW - [...title].length));
-    out.push(`${p.bold(r.id.slice(0, 8))}  ${kind}  ${state}  ${title}${pad}  ${p.dim(r.cwd)}`);
+    const acct = acctW > 0 ? `  ${p.dim(r.account ?? '')}${' '.repeat(Math.max(0, acctW - [...(r.account ?? '')].length))}` : '';
+    out.push(`${p.bold(r.id.slice(0, 8))}  ${kind}  ${state}  ${title}${pad}${acct}  ${p.dim(r.cwd)}`);
   }
   return out;
 }

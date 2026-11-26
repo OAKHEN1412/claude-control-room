@@ -32,7 +32,9 @@ import {
   DEFAULT_EFFORT,
 } from '../../shared/protocol';
 
+import { TERMINAL_ACCOUNT_ID } from '../../shared/accounts';
 import { buildUserContent, type UserContent } from './attachments';
+import type { AccountPort } from './accountPort';
 import { CodedError } from './codedError';
 import { parseQuestions } from './questions';
 import { stripSecrets } from './secrets';
@@ -70,6 +72,13 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
+/** One account switch of a job: when, and the profile NAMES before and after. */
+export interface AccountSwitchEntry {
+  at: number;
+  from: string;
+  to: string;
+}
+
 export interface SessionOptions {
   sessionId: string;
   cwd: string;
@@ -78,6 +87,7 @@ export interface SessionOptions {
   effort: string | null;
   permissionMode?: PermissionMode;
   remoteControl?: boolean; // turn Remote Control on once the child has initialised
+  accountId?: string; // profile the child runs as (reported in state(); absent when accounts are not used)
   now?: () => number;
   controlTimeoutMs?: number; // wait for a control_response
   stopGraceMs?: number; // after interrupt, kill the child if the turn has not ended
@@ -168,6 +178,9 @@ export class RunnerSession extends EventEmitter {
   private remoteControl = false;
   private remoteUrl: string | undefined;
   private wantRemote: boolean;
+  private readonly accountId: string | undefined;
+  private accountPending: string | undefined; // profile of a switch waiting for the turn to end
+  private accountLog: AccountSwitchEntry[] | undefined; // last switches of this job (names, not ids)
   private confirmed = false;
   private alive = true;
   private error: string | undefined;
@@ -184,6 +197,7 @@ export class RunnerSession extends EventEmitter {
     this.effort = opts.effort;
     this.permissionMode = opts.permissionMode ?? DEFAULT_PERMISSION_MODE;
     this.wantRemote = opts.remoteControl === true;
+    this.accountId = opts.accountId;
     this.now = opts.now ?? Date.now;
     this.controlTimeoutMs = opts.controlTimeoutMs ?? 10_000;
     this.stopGraceMs = opts.stopGraceMs ?? 5_000;
@@ -226,7 +240,17 @@ export class RunnerSession extends EventEmitter {
       pending: [...this.held.values()].map((h) => h.pending),
       ...(this.error !== undefined ? { error: this.error } : {}),
       startedAt: this.startedAt,
+      ...(this.accountId !== undefined ? { accountId: this.accountId } : {}),
+      ...(this.accountPending !== undefined ? { accountPending: this.accountPending } : {}),
+      ...(this.accountLog && this.accountLog.length > 0 ? { accountLog: this.accountLog.map((e) => ({ ...e })) } : {}),
     };
+  }
+
+  /** Account-switch bookkeeping kept on the job: `pending` = switch waiting for the turn to end (undefined clears it). */
+  setAccountMeta(meta: { pending?: string; log?: AccountSwitchEntry[] }): void {
+    if ('pending' in meta) this.accountPending = meta.pending;
+    if (meta.log !== undefined) this.accountLog = meta.log;
+    this.changed();
   }
 
   private changed(): void {
@@ -687,7 +711,11 @@ export interface RunnerOptions {
   uploads?: { resolve(id: string): StoredUpload | null };
   /** Extra env for a child by session id (the server gives clip jobs their key after a restart). Merged under extraEnv. */
   envForSession?: (sessionId: string) => Record<string, string>;
+  /** Profiles a job can run as (token injected in the child env). Without it no account logic runs at all. */
+  accounts?: AccountPort;
 }
+
+const ACCOUNT_LOG_MAX = 20;
 
 const SAFE_ID_RE = /^[A-Za-z0-9_-]+$/;
 const SAFE_MODEL_RE = /^[A-Za-z0-9._-]+$/;
@@ -708,8 +736,29 @@ export function childEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEn
 const defaultSpawn: SpawnFn = (cmd, args, opts) =>
   nodeSpawn(cmd, args, { cwd: opts.cwd, env: opts.env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true }) as unknown as ChildLike;
 
+/** Arguments of Runner.adopt(): kept as they were when a job waits for a locked profile. */
+export interface AdoptRequest {
+  sessionId: string;
+  cwd: string;
+  model?: string;
+  effort?: EffortLevel;
+  rawModel?: string | null;
+  permissionMode?: PermissionMode;
+  remoteControl?: boolean;
+  accountId?: string;
+}
+
+interface WaitingJob {
+  req: AdoptRequest;
+  opts: { trustedCwd?: boolean };
+  accountId: string; // the resolved profile the job waits for
+  since: number;
+}
+
 export class Runner extends EventEmitter {
   private readonly sessions = new Map<string, RunnerSession>();
+  // resumes that wait for a locked profile (adopt() with such a profile): no child yet, the request is kept until resumeWaiting()
+  private readonly waiting = new Map<string, WaitingJob>();
   // jobs the user closed on purpose (see close()): removed as soon as their child exits
   private readonly closing = new Set<string>();
   // extra env given at start (clip jobs: the ElevenLabs key), kept per session id for re-launches in THIS process only.
@@ -718,6 +767,11 @@ export class Runner extends EventEmitter {
   private readonly opts: RunnerOptions;
   private readonly spawnFn: SpawnFn;
   private lastCmds: SlashCommand[] | null = null;
+  // account switches: the latest requested profile per job waiting for its turn to end, the job listeners that wait for
+  // it, and the jobs whose switch is running right now (one at a time per job)
+  private readonly pendingSwitch = new Map<string, string>();
+  private readonly pendingListeners = new Map<string, { onChange: () => void; onExit: () => void }>();
+  private readonly switching = new Set<string>();
 
   /** Slash commands of one job (null until its child answered). */
   commandsFor(sessionId: string): SlashCommand[] | null {
@@ -736,11 +790,61 @@ export class Runner extends EventEmitter {
   }
 
   states(): RunnerState[] {
-    return [...this.sessions.values()].map((s) => s.state());
+    return [...this.sessions.values()].map((s) => s.state()).concat([...this.waiting.keys()].map((sid) => this.waitingState(sid)));
   }
 
   has(sessionId: string): boolean {
-    return this.sessions.has(sessionId);
+    return this.sessions.has(sessionId) || this.waiting.has(sessionId);
+  }
+
+  /** True when the profile is a token profile with a password that is not unlocked in this server run. */
+  private isLocked(accountId: string): boolean {
+    return this.opts.accounts?.isLocked(accountId) === true;
+  }
+
+  /** Synthetic state of a job that waits for its locked profile: not alive, no child. */
+  private waitingState(sessionId: string): RunnerState {
+    const w = this.waiting.get(sessionId);
+    if (!w) throw new Error('not waiting'); // only called for keys of `waiting`
+    return {
+      sessionId,
+      cwd: w.req.cwd,
+      alive: false,
+      pid: null,
+      busy: false,
+      queued: 0,
+      model: w.req.model ?? w.req.rawModel ?? null,
+      effort: w.req.effort ?? null,
+      confirmed: false,
+      permissionMode: w.req.permissionMode ?? DEFAULT_PERMISSION_MODE,
+      remoteControl: false,
+      pending: [],
+      startedAt: w.since,
+      accountId: w.accountId,
+      waitingUnlock: w.accountId,
+    };
+  }
+
+  /**
+   * Launches every job that waits for this profile (it was unlocked). Each goes through adopt() again; the entry is
+   * removed first, so the real session's own 'change' replaces the synthetic state. A job whose relaunch fails is
+   * reported as 'waiting_failed' and dropped ('removed'). Never throws. Returns how many jobs were started.
+   */
+  resumeWaiting(accountId: string): number {
+    if (this.isLocked(accountId)) return 0;
+    let n = 0;
+    for (const [sid, w] of [...this.waiting]) {
+      if (w.accountId !== accountId) continue;
+      this.waiting.delete(sid);
+      try {
+        this.adopt(w.req, w.opts);
+        n++;
+      } catch (e) {
+        this.emit('waiting_failed', { sessionId: sid, error: e instanceof Error ? e.message : String(e) });
+        this.emit('removed', sid);
+      }
+    }
+    return n;
   }
 
   isAlive(sessionId: string): boolean {
@@ -801,6 +905,22 @@ export class Runner extends EventEmitter {
     ];
   }
 
+  /**
+   * Profile a job runs as: requested ?? remembered ?? default; an unknown id falls back to the default.
+   * undefined without opts.accounts (accounts not in use).
+   */
+  private resolveAccount(sessionId: string, requested?: string): string | undefined {
+    const port = this.opts.accounts;
+    if (!port) return undefined;
+    const id = requested ?? port.sessionAccount(sessionId) ?? port.defaultId();
+    return port.exists(id) ? id : port.defaultId();
+  }
+
+  /** Profile id of a job: from its state, else the remembered one, else null. */
+  accountOf(sessionId: string): string | null {
+    return this.sessions.get(sessionId)?.state().accountId ?? this.opts.accounts?.sessionAccount(sessionId) ?? null;
+  }
+
   private launch(
     cwd: string,
     cliModel: string,
@@ -810,11 +930,22 @@ export class Runner extends EventEmitter {
     permissionMode: PermissionMode = DEFAULT_PERMISSION_MODE,
     remoteControl = false,
     extraEnv: Record<string, string> = {},
+    accountId?: string,
   ): RunnerSession {
-    const child = this.spawnFn(this.opts.claudeBin ?? 'claude', this.buildArgs(cliModel, effort, flag, permissionMode), {
-      cwd,
-      env: { ...childEnv(), ...(this.opts.envForSession?.(sessionId) ?? {}), ...extraEnv }, // extra envs are merged over the parent env for this child only
-    });
+    const port = this.opts.accounts;
+    // checked on the resolved profile, before any child exists; adopt() diverts locked profiles to `waiting` instead
+    if (accountId !== undefined && this.isLocked(accountId)) throw new CommandError('account is locked: enter its password first', 'srv.account.locked');
+    // tokenFor throws before any child exists when the profile needs a token that is not loaded
+    const token = port && accountId !== undefined ? port.tokenFor(accountId) : null;
+    const env: NodeJS.ProcessEnv = { ...childEnv(), ...(this.opts.envForSession?.(sessionId) ?? {}), ...extraEnv }; // extra envs are merged over the parent env for this child only
+    if (typeof token === 'string') {
+      // the profile's token replaces every other login the child could pick up (set last: nothing above may override it)
+      env.CLAUDE_CODE_OAUTH_TOKEN = token;
+      delete env.ANTHROPIC_API_KEY;
+      delete env.ANTHROPIC_AUTH_TOKEN;
+    }
+    const child = this.spawnFn(this.opts.claudeBin ?? 'claude', this.buildArgs(cliModel, effort, flag, permissionMode), { cwd, env });
+    if (port && accountId !== undefined) port.rememberSession(sessionId, accountId);
     const session = new RunnerSession({
       sessionId,
       cwd,
@@ -823,6 +954,7 @@ export class Runner extends EventEmitter {
       effort,
       permissionMode,
       remoteControl,
+      accountId,
       now: this.opts.now,
       controlTimeoutMs: this.opts.controlTimeoutMs,
       stopGraceMs: this.opts.stopGraceMs,
@@ -861,7 +993,7 @@ export class Runner extends EventEmitter {
    * extraEnv: merged over the child's env for this job only (clip jobs pass the ElevenLabs key here, never in the prompt).
    */
   start(
-    req: { cwd: string; model: string; effort: EffortLevel; prompt: string; permissionMode?: PermissionMode; remoteControl?: boolean; attachments?: string[] },
+    req: { cwd: string; model: string; effort: EffortLevel; prompt: string; permissionMode?: PermissionMode; remoteControl?: boolean; attachments?: string[]; accountId?: string },
     opts: { trustedCwd?: boolean; extraEnv?: Record<string, string> } = {},
   ): string {
     // trustedCwd is only passed by server code that made the folder itself (Clip Studio); the browser cannot set it.
@@ -871,8 +1003,9 @@ export class Runner extends EventEmitter {
     const content = this.userContent(req.prompt, req.attachments); // before the child exists: an unknown id starts nothing
     const sessionId = randomUUID();
     const extra = { ...(opts.extraEnv ?? {}) };
-    if (Object.keys(extra).length > 0) this.jobEnv.set(sessionId, extra);
-    const s = this.launch(cwd, cli, req.effort, ['--session-id', sessionId], sessionId, req.permissionMode ?? DEFAULT_PERMISSION_MODE, req.remoteControl === true, extra);
+    const accountId = this.resolveAccount(sessionId, req.accountId);
+    const s = this.launch(cwd, cli, req.effort, ['--session-id', sessionId], sessionId, req.permissionMode ?? DEFAULT_PERMISSION_MODE, req.remoteControl === true, extra, accountId);
+    if (Object.keys(extra).length > 0) this.jobEnv.set(sessionId, extra); // only once the child exists (a refused token starts nothing)
     s.sendUser(content);
     return sessionId;
   }
@@ -881,23 +1014,19 @@ export class Runner extends EventEmitter {
    * Resume an existing session under the Runner (`claude --resume <id>`). The caller checks the old process is gone.
    * trustedCwd: the folder was made by server code (clip job), so it skips the whitelist, as in start().
    */
-  adopt(
-    req: {
-      sessionId: string;
-      cwd: string;
-      model?: string;
-      effort?: EffortLevel;
-      rawModel?: string | null;
-      permissionMode?: PermissionMode;
-      remoteControl?: boolean;
-    },
-    opts: { trustedCwd?: boolean } = {},
-  ): string {
+  adopt(req: AdoptRequest, opts: { trustedCwd?: boolean } = {}): string {
     if (!SAFE_ID_RE.test(req.sessionId)) throw new CommandError('bad session id');
     if (this.isAlive(req.sessionId)) throw new CommandError('session already controlled from the web');
     const cwd = opts.trustedCwd ? this.trustCwd(req.cwd) : this.resolveCwd(req.cwd);
     const cli = (req.model ? MODEL_OPTIONS.find((o) => o.id === req.model)?.cli : null) ?? req.rawModel ?? 'opus';
     if (!SAFE_MODEL_RE.test(cli)) throw new CommandError('model not available');
+    const accountId = this.resolveAccount(req.sessionId, req.accountId);
+    if (accountId !== undefined && this.isLocked(accountId)) {
+      // a locked profile: keep the request until the password is entered (resumeWaiting); no child now
+      this.waiting.set(req.sessionId, { req, opts, accountId, since: this.opts.now ? this.opts.now() : Date.now() });
+      this.emit('change', this.waitingState(req.sessionId));
+      return req.sessionId;
+    }
     this.launch(
       cwd,
       cli,
@@ -907,6 +1036,7 @@ export class Runner extends EventEmitter {
       req.permissionMode ?? DEFAULT_PERMISSION_MODE,
       req.remoteControl === true,
       this.jobEnv.get(req.sessionId) ?? {}, // a clip job keeps its env when it is re-launched in this process
+      accountId,
     );
     return req.sessionId;
   }
@@ -986,9 +1116,142 @@ export class Runner extends EventEmitter {
    * as the child has exited, instead of after the usual goneKeepMs.
    */
   close(sessionId: string): void {
+    if (this.waiting.delete(sessionId)) {
+      // a job that only waits for its profile has no child: it is gone at once
+      this.emit('closing', sessionId);
+      this.emit('removed', sessionId, { closed: true });
+      return;
+    }
     this.live(sessionId).close();
     this.closing.add(sessionId);
     this.emit('closing', sessionId); // auto-resume forgets the job at once (a server stop before the child exits must not bring it back)
+  }
+
+  /**
+   * Run a live job as another profile. Idle: the child is closed and resumed (`--resume`) as that profile now.
+   * Busy (a turn runs or messages are queued): the switch waits, and runs once the job is idle.
+   * Returns 'done' (switched, or already that profile) or 'queued'.
+   */
+  async setAccount(sessionId: string, accountId: string): Promise<'done' | 'queued'> {
+    const port = this.opts.accounts;
+    if (!port) throw new CommandError('accounts are not enabled');
+    if (!port.exists(accountId)) throw new CommandError('ไม่พบโปรไฟล์บัญชีนี้', 'srv.account.unknown');
+    if (this.isLocked(accountId)) throw new CommandError('account is locked: enter its password first', 'srv.account.locked');
+    port.tokenFor(accountId); // throws srv.account.noToken when the token is not loaded; the value is not kept here
+    const s = this.live(sessionId);
+    if (this.switching.has(sessionId)) throw new CommandError('an account switch is already running for this job');
+    if (this.accountOf(sessionId) === accountId) {
+      this.dropPending(sessionId);
+      return 'done';
+    }
+    const st = s.state();
+    if (st.busy || st.queued > 0) {
+      this.pendingSwitch.set(sessionId, accountId); // latest request wins
+      if (!this.pendingListeners.has(sessionId)) this.listenForIdle(s);
+      s.setAccountMeta({ pending: accountId });
+      return 'queued';
+    }
+    this.dropPending(sessionId);
+    this.switching.add(sessionId);
+    try {
+      await this.performSwitch(sessionId, accountId);
+      return 'done';
+    } finally {
+      this.switching.delete(sessionId);
+    }
+  }
+
+  /** Waits (once per job) for the job to become idle, then runs its pending switch. */
+  private listenForIdle(s: RunnerSession): void {
+    const sid = s.sessionId;
+    const onChange = (): void => {
+      if (this.switching.has(sid)) return;
+      const st = s.state();
+      if (!st.alive || st.busy || st.queued > 0) return;
+      const target = this.pendingSwitch.get(sid);
+      if (target === undefined) return;
+      this.dropPending(sid); // removes these listeners and clears the pending mark
+      this.switching.add(sid);
+      this.performSwitch(sid, target)
+        .catch((e: unknown) => {
+          this.emit('account_switch_failed', { sessionId: sid, error: e instanceof Error ? e.message : String(e) });
+        })
+        .finally(() => this.switching.delete(sid));
+    };
+    const onExit = (): void => this.dropPending(sid); // the job ended before its turn did: the switch is dropped
+    s.on('change', onChange);
+    s.once('exit', onExit);
+    this.pendingListeners.set(sid, { onChange, onExit });
+  }
+
+  /** Forget a queued switch of a job (no-op when there is none). */
+  private dropPending(sessionId: string): void {
+    if (!this.pendingSwitch.has(sessionId)) return;
+    this.pendingSwitch.delete(sessionId);
+    const l = this.pendingListeners.get(sessionId);
+    this.pendingListeners.delete(sessionId);
+    const s = this.sessions.get(sessionId);
+    if (s && l) {
+      s.off('change', l.onChange);
+      s.off('exit', l.onExit);
+    }
+    s?.setAccountMeta({ pending: undefined });
+  }
+
+  /** Resolves true when the session has exited, false when `ms` pass first. */
+  private waitExit(s: RunnerSession, ms: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      if (!s.state().alive) {
+        resolve(true);
+        return;
+      }
+      const onExit = (): void => {
+        clearTimeout(t);
+        resolve(true);
+      };
+      const t = setTimeout(() => {
+        s.off('exit', onExit);
+        resolve(false);
+      }, ms);
+      s.once('exit', onExit);
+    });
+  }
+
+  /**
+   * Close the live child (NOT Runner.close: that marks the job closed on purpose and auto-resume would forget it),
+   * then resume the same session under the new profile with the same folder, model, effort and permission mode.
+   */
+  private async performSwitch(sessionId: string, accountId: string): Promise<void> {
+    const port = this.opts.accounts;
+    if (!port) throw new CommandError('accounts are not enabled');
+    if (this.isLocked(accountId)) throw new CommandError('account is locked: enter its password first', 'srv.account.locked'); // before the old child is closed
+    const old = this.live(sessionId);
+    const st = old.state();
+    const from = port.nameOf(this.accountOf(sessionId) ?? TERMINAL_ACCOUNT_ID);
+    const to = port.nameOf(accountId);
+    const model = st.model !== null && SAFE_MODEL_RE.test(st.model) ? st.model : 'opus';
+    const effort = st.effort ?? DEFAULT_EFFORT;
+    const exited = this.waitExit(old, 4_000);
+    old.close(); // stdin ends; the child exits on its own, close() kills it after its own grace time
+    if (!(await exited)) {
+      old.killChild();
+      if (!(await this.waitExit(old, 2_000))) throw new CommandError('ปิดงานเดิมไม่สำเร็จ — ยังไม่ได้สลับบัญชี', 'srv.account.switchFailed');
+    }
+    const at = this.opts.now ? this.opts.now() : Date.now();
+    const log: AccountSwitchEntry[] = [...(st.accountLog ?? []), { at, from, to }].slice(-ACCOUNT_LOG_MAX);
+    const fresh = this.launch(
+      st.cwd,
+      model,
+      effort,
+      ['--resume', sessionId],
+      sessionId,
+      st.permissionMode,
+      st.remoteControl,
+      this.jobEnv.get(sessionId) ?? {},
+      accountId,
+    );
+    fresh.setAccountMeta({ log });
+    this.emit('account_switch', { sessionId, from, to, at });
   }
 
   async setModel(sessionId: string, model: string): Promise<RunnerState> {

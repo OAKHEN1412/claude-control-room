@@ -1,0 +1,187 @@
+/* Unlock dialog (profile) and the full-screen app lock page. Prefix unlock-. Colours from tokens.css. */
+
+.unlock-modal {
+  width: min(420px, 100%);
+}
+
+.unlock-body,
+.unlock-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  min-height: 0;
+  margin: 0;
+}
+
+.unlock-who {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.unlock-who-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.unlock-name {
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.unlock-hint {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.unlock-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.unlock-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.unlock-submit:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.unlock-page {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: var(--bg);
+  color: var(--text);
+  overflow-y: auto;
+}
+
+.unlock-card {
+  width: min(380px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.unlock-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+/* App PIN: six masked boxes (PinInput). Shake on a wrong PIN; the countdown shows a lockout. */
+/* Self-contained: one row of six boxes wherever PinInput is mounted. The boxes do not use cc-input, so no page or
+   dialog input rule (e.g. .ap-page .cc-input) can override their size. */
+.pin-group {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* Full-screen app lock page only: the six boxes sit centred under the title. */
+.pin-group.pin-group--center {
+  justify-content: center;
+}
+
+/* Box look: the same as .cc-input (border, background, text colour, radius, font), styled here directly. */
+.pin-box {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0;
+  text-align: center;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+}
+
+/* Size: specificity 0,2,1 so it beats any page/dialog rule on inputs. */
+.pin-group input.pin-box {
+  flex: 0 0 auto;
+  width: min(44px, calc((100% - 40px) / 6));
+  min-width: 40px;
+  max-width: 44px;
+  height: 52px;
+  min-height: 52px;
+}
+
+.pin-box:disabled {
+  color: var(--muted);
+  border-color: var(--line);
+  opacity: 0.5;
+  cursor: default;
+}
+
+.pin-group.is-error .pin-box {
+  border-color: var(--danger, #ef4444);
+}
+
+.pin-group.is-shaking {
+  animation: pin-shake 0.42s ease-in-out;
+}
+
+@keyframes pin-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-8px); }
+  40% { transform: translateX(8px); }
+  60% { transform: translateX(-6px); }
+  80% { transform: translateX(4px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pin-group.is-shaking {
+    animation: none;
+  }
+}
+
+.unlock-countdown {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: center;
+}
+
+.ap-pin-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ap-pin-label {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* Profile password field: keep the input at normal height inside the flex-column form. */
+.unlock-body .cc-input,
+.unlock-field .cc-input {
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  box-sizing: border-box;
+}

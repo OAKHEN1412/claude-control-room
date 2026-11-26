@@ -22,6 +22,11 @@ describe('parseArgs', () => {
     expect(parse(['new', '--cwd', 'D:\\x', '--model', 'haiku', '--effort', 'low', '--no-attach', 'hi'])).toMatchObject({
       command: { cwd: 'D:\\x', model: 'haiku', effort: 'low', prompt: 'hi', attach: false },
     });
+    expect(parse(['new', '--account', 'work-1', 'hi'])).toMatchObject({ command: { kind: 'new', account: 'work-1', prompt: 'hi' } });
+    expect(parse(['new', '--account=Terminal', 'hi'])).toMatchObject({ command: { account: 'Terminal' } });
+    const noAccount = parse(['new', 'hi']);
+    expect(noAccount.ok && 'account' in noAccount.command).toBe(false);
+    expect(parse(['new', '--account'])).toMatchObject({ ok: false });
     expect(parse(['new', '--model=sonnet', 'a'])).toMatchObject({ command: { model: 'sonnet' } });
     expect(parse(['new', '--model', 'qwen', 'a'])).toMatchObject({ ok: false }); // disabled in the Runner
     expect(parse(['new', '--model', 'nope', 'a'])).toMatchObject({ ok: false });

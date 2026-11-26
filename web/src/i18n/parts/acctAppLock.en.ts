@@ -1,0 +1,26 @@
+// English app PIN strings. Must match acctAppLockTh keys.
+import type { acctAppLockTh } from './acctAppLock.th';
+export const acctAppLockEn: Record<keyof typeof acctAppLockTh, string> = {
+  'acct.applock.title': 'App PIN',
+  'acct.applock.desc': 'Set a 6-digit PIN so the Control Room asks for it before opening.',
+  'acct.applock.on': 'Enabled',
+  'acct.applock.off': 'Not set',
+  'acct.applock.loading': 'Loading status…',
+  'acct.applock.loadFailed': 'Could not load the app PIN status',
+  'acct.applock.setTitle': 'Set the app PIN',
+  'acct.applock.changeTitle': 'Change the app PIN',
+  'acct.applock.removeTitle': 'Remove the app PIN',
+  'acct.applock.lockNow': 'Lock now',
+  'acct.applock.saved': 'Saved',
+  'acct.applock.noteScope': 'This PIN locks only the Control Room program. The Claude Code login file (the main account) is a plain file the terminal must read, so it cannot be encrypted with this PIN.',
+  'acct.applock.noteReset': 'Forgot the PIN: stop the server, then delete the appLock key from config.json.',
+  'acct.pin.label': '6-digit PIN',
+  'acct.pin.digit': 'Digit {n} of {total}',
+  'acct.pin.new': 'New PIN',
+  'acct.pin.confirm': 'Confirm new PIN',
+  'acct.pin.current': 'Current PIN',
+  'acct.pin.mismatch': 'The two PINs do not match. Try again.',
+  'acct.pin.countdown': 'Try again in {time}',
+  'acct.pin.err.wrong': 'Wrong PIN.',
+  'acct.pin.err.invalid': 'The PIN must be exactly 6 digits.',
+};

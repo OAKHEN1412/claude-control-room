@@ -11,6 +11,8 @@ import { CloseIcon } from './icons';
 import { PaneView } from './PaneView';
 import { statusWord } from './canvasLayout';
 import { lastLine, type PaneNode } from './paneStore';
+import { AccountChip } from '../components/AccountChip';
+import { isLocalJob } from '../accountJobLogic';
 
 export interface CanvasPaneProps {
   pane: PaneNode;
@@ -70,6 +72,11 @@ export const CanvasPane = memo(function CanvasPane(p: CanvasPaneProps) {
         <span className="cv-pane-dot" style={{ background: color }} aria-hidden="true" />
         <span className="cv-pane-name">{name}</span>
         <span className="cv-pane-sub">{limit ?? sub}</span>
+        {session && !p.compact && isLocalJob(session, p.runner) && (
+          <span className="cv-pane-acct" data-nodrag="1">
+            <AccountChip sessionId={session.sessionId} runner={p.runner} />
+          </span>
+        )}
         <button type="button" className="cv-pane-x" data-nodrag="1" aria-label={t('canvas.pane.close')} title={t('canvas.pane.close')} onClick={() => p.onClose(pane.id)}>
           <CloseIcon />
         </button>

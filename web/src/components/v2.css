@@ -57,3 +57,47 @@
 .cr-root.is-stacked .cr-board--v2 .cr-w {
   pointer-events: auto;
 }
+
+/* Header stays on one line at 360px and up. Descendant selectors win over styles.css regardless of load order. */
+header.cr-header {
+  flex-wrap: nowrap;
+}
+
+.cr-header > .cr-counts,
+.cr-header > .cr-pill {
+  flex: none;
+  white-space: nowrap;
+}
+
+.cr-header .cr-brand {
+  flex: 1 1 0;
+  min-width: 0;
+  flex-wrap: nowrap;
+  align-items: center;
+}
+
+.cr-header .cr-brand h1 {
+  flex: none;
+  white-space: nowrap;
+}
+
+.cr-header .cr-brand > .cr-mono {
+  min-width: 0;
+  max-width: 14ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 899px) {
+  .cr-header .cr-brand > .cr-mono {
+    display: none;
+  }
+}
+
+.cr-header .cr-controls {
+  flex: 0 1 auto;
+  min-width: 0;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}

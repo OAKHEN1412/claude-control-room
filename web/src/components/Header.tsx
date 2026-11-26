@@ -1,10 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { PRESET_NAMES, type PresetName } from '../layout';
 import { isLive } from '../useServer';
+import { useAccounts } from '../accountsContext';
+import { profileById, shouldRefresh } from '../accountsView';
+import { refreshUsage } from '../accountsClient';
 import type { NotifyPermission } from '../notify';
 import { countText } from '../queue';
 import type { UiVersion } from '../uiVersion';
 import { UsageRings } from './UsageRings';
+import { AccountMenu } from './AccountMenu';
 import { useLang, useT, type TKey } from '../i18n';
 import type { UsageSnapshot } from '../../../shared/usage';
 import type { RunnerState, SessionInfo } from '../../../shared/protocol';
@@ -60,6 +64,18 @@ export function Header({ machine, connected, lastMessageAt, demo, running, waiti
   const t = useT();
   const [lang, setLang] = useLang();
   const now = useNow(1000);
+  const { accounts, defaultAccountId } = useAccounts();
+  const headerProfile = profileById(accounts, defaultAccountId);
+  const headerTokenState = headerProfile?.tokenState ?? null;
+  const lastRefreshed = useRef<string | null>(null);
+  // Once per header profile (and again when its token appears): ask for fresh usage. The result is ignored; the
+  // ws `accounts` broadcast updates the rings.
+  useEffect(() => {
+    if (!headerProfile || !shouldRefresh(headerProfile, lastRefreshed.current)) return;
+    lastRefreshed.current = headerProfile.id;
+    void refreshUsage(headerProfile.id);
+    // headerProfile is read through its id and token state, the only fields that decide a refresh.
+  },[headerProfile?.id, headerTokenState]);
   const live = isLive(connected, lastMessageAt, now);
   const liveText = lastMessageAt === null ? t('shell.header.live') : t('shell.header.liveAt', { time: clock(lastMessageAt) });
   const staleText = lastMessageAt === null ? t('shell.header.stale') : t('shell.header.staleAt', { time: clock(lastMessageAt) });
@@ -178,6 +194,8 @@ export function Header({ machine, connected, lastMessageAt, demo, running, waiti
           {lang === 'th' ? t('lang.en') : t('lang.th')}
         </button>
       </div>
+
+      <AccountMenu runners={runners} />
     </header>
   );
 }

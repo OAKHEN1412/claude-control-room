@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
+import type { AccountUsage } from '../../shared/accounts';
 import type { ClipJob, ClipOutroPhrase, ClipPreset, ClipQueueItem, ClipSettings, ClipStartInput, MachineShell, WorklogCard } from '../../shared/protocol';
 import { dataDir } from './cmdlog';
 
@@ -63,6 +64,50 @@ export interface RunnerJobRow {
 }
 
 export type CallKind = 'summary' | 'ask';
+
+/** One Claude account profile. Never holds a token: only the fingerprint of it. */
+export interface AccountRow {
+  id: string;
+  name: string;
+  color: string;
+  letter: string;
+  note: string;
+  fingerprint: string | null;
+  createdAt: number;
+  tokenAt: number | null;
+  lastCheckAt: number | null;
+  lastCheckOk: boolean | null;
+  lastUsage: AccountUsage | null;
+  hidden: boolean;
+}
+
+/** Columns an accounts update may touch. The key is the AccountRow field, the value the SQL column. */
+const ACCOUNT_COLUMNS: Record<keyof Omit<AccountRow, 'id' | 'createdAt'>, string> = {
+  name: 'name',
+  color: 'color',
+  letter: 'letter',
+  note: 'note',
+  fingerprint: 'fingerprint',
+  tokenAt: 'token_at',
+  lastCheckAt: 'last_check_at',
+  lastCheckOk: 'last_check_ok',
+  lastUsage: 'last_usage',
+  hidden: 'hidden',
+};
+
+/** last_usage is JSON text. Anything that is not an object with a numeric updatedAt reads as null. */
+function parseAccountUsage(v: unknown): AccountUsage | null {
+  if (typeof v !== 'string' || v === '') return null;
+  try {
+    const parsed: unknown = JSON.parse(v);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    const rec = parsed as Record<string, unknown>;
+    if (typeof rec.updatedAt !== 'number') return null;
+    return parsed as AccountUsage;
+  } catch {
+    return null;
+  }
+}
 
 export class WorklogDb {
   private readonly db: Db;
@@ -181,6 +226,29 @@ export class WorklogDb {
         effort TEXT,
         title TEXT NOT NULL DEFAULT '',
         permission_mode TEXT NOT NULL DEFAULT 'default',
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS accounts (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        color TEXT NOT NULL,
+        letter TEXT NOT NULL,
+        note TEXT NOT NULL DEFAULT '',
+        fingerprint TEXT,
+        created_at INTEGER NOT NULL,
+        token_at INTEGER,
+        last_check_at INTEGER,
+        last_check_ok INTEGER,
+        last_usage TEXT,
+        hidden INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE TABLE IF NOT EXISTS account_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS session_accounts (
+        session_id TEXT PRIMARY KEY,
+        account_id TEXT NOT NULL,
         updated_at INTEGER NOT NULL
       );
     `);
@@ -644,5 +712,114 @@ export class WorklogDb {
 
   deleteMachine(id: string): boolean {
     return Number(this.db.prepare('DELETE FROM machines WHERE id = ?').run(id).changes) > 0;
+  }
+
+  // ---- accounts (Claude profiles). The token itself is never stored here ----
+
+  private toAccount(r: Record<string, unknown>): AccountRow {
+    return {
+      id: String(r.id),
+      name: String(r.name),
+      color: String(r.color),
+      letter: String(r.letter),
+      note: String(r.note ?? ''),
+      fingerprint: r.fingerprint === null || r.fingerprint === undefined ? null : String(r.fingerprint),
+      createdAt: Number(r.created_at),
+      tokenAt: r.token_at === null || r.token_at === undefined ? null : Number(r.token_at),
+      lastCheckAt: r.last_check_at === null || r.last_check_at === undefined ? null : Number(r.last_check_at),
+      lastCheckOk: r.last_check_ok === null || r.last_check_ok === undefined ? null : Number(r.last_check_ok) === 1,
+      lastUsage: parseAccountUsage(r.last_usage),
+      hidden: Number(r.hidden) === 1,
+    };
+  }
+
+  /** Oldest profile first. */
+  listAccounts(): AccountRow[] {
+    return this.db
+      .prepare('SELECT * FROM accounts ORDER BY created_at, id')
+      .all()
+      .map((r) => this.toAccount(r));
+  }
+
+  getAccount(id: string): AccountRow | null {
+    const r = this.db.prepare('SELECT * FROM accounts WHERE id = ?').get(id);
+    return r ? this.toAccount(r) : null;
+  }
+
+  insertAccount(row: AccountRow): void {
+    this.db
+      .prepare(
+        `INSERT INTO accounts (id, name, color, letter, note, fingerprint, created_at, token_at, last_check_at, last_check_ok, last_usage, hidden)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        row.id,
+        row.name,
+        row.color,
+        row.letter,
+        row.note,
+        row.fingerprint,
+        row.createdAt,
+        row.tokenAt,
+        row.lastCheckAt,
+        row.lastCheckOk === null ? null : row.lastCheckOk ? 1 : 0,
+        row.lastUsage === null ? null : JSON.stringify(row.lastUsage),
+        row.hidden ? 1 : 0,
+      );
+  }
+
+  /** Partial update. Only the keys present in the patch are written; returns false when the id is unknown. */
+  updateAccount(id: string, patch: Partial<Omit<AccountRow, 'id' | 'createdAt'>>): boolean {
+    const sets: string[] = [];
+    const values: (string | number | null)[] = [];
+    for (const key of Object.keys(ACCOUNT_COLUMNS) as (keyof typeof ACCOUNT_COLUMNS)[]) {
+      if (!Object.prototype.hasOwnProperty.call(patch, key) || patch[key] === undefined) continue;
+      const v = patch[key];
+      let sqlValue: string | number | null;
+      if (v === null) sqlValue = null;
+      else if (key === 'lastCheckOk' || key === 'hidden') sqlValue = v ? 1 : 0;
+      else if (key === 'lastUsage') sqlValue = JSON.stringify(v);
+      else sqlValue = v as string | number;
+      sets.push(`${ACCOUNT_COLUMNS[key]} = ?`);
+      values.push(sqlValue);
+    }
+    if (sets.length === 0) return this.getAccount(id) !== null;
+    values.push(id);
+    const r = this.db.prepare(`UPDATE accounts SET ${sets.join(', ')} WHERE id = ?`).run(...values);
+    return Number(r.changes) > 0;
+  }
+
+  deleteAccount(id: string): boolean {
+    return Number(this.db.prepare('DELETE FROM accounts WHERE id = ?').run(id).changes) > 0;
+  }
+
+  getAccountSetting(key: string): string | null {
+    const r = this.db.prepare('SELECT value FROM account_settings WHERE key = ?').get(key);
+    return r ? String(r.value) : null;
+  }
+
+  setAccountSetting(key: string, value: string): void {
+    this.db
+      .prepare('INSERT INTO account_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+      .run(key, value);
+  }
+
+  getSessionAccount(sessionId: string): string | null {
+    const r = this.db.prepare('SELECT account_id FROM session_accounts WHERE session_id = ?').get(sessionId);
+    return r ? String(r.account_id) : null;
+  }
+
+  setSessionAccount(sessionId: string, accountId: string, at: number): void {
+    this.db
+      .prepare(
+        `INSERT INTO session_accounts (session_id, account_id, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(session_id) DO UPDATE SET account_id = excluded.account_id, updated_at = excluded.updated_at`,
+      )
+      .run(sessionId, accountId, at);
+  }
+
+  /** Deletes the session rows last updated before `olderThanMs` (an epoch-ms cutoff). Returns how many were removed. */
+  pruneSessionAccounts(olderThanMs: number): number {
+    return Number(this.db.prepare('DELETE FROM session_accounts WHERE updated_at < ?').run(olderThanMs).changes);
   }
 }

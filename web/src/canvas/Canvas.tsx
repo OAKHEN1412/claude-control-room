@@ -1,9 +1,14 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
+import type { AccountInfo } from '../../../shared/accounts';
 import type { LinkInfo, RunnerState, SessionInfo, Status } from '../../../shared/protocol';
 import type { MachineAttachment, MachineInfo, TailscalePeer } from '../protocolNext';
 import { modeBadges } from '../control';
 import type { CharView } from '../useCharacter';
 import { Character } from '../components/Character';
+import { AccountAvatar } from '../components/AccountAvatar';
+import { LockGlyph } from '../components/AccountChip';
+import { useAccounts } from '../accountsContext';
+import { cardAvatar, cardWaiting } from '../canvasAccount';
 import { badgeText, shortModel } from '../components/graphLayout';
 import { useT } from '../i18n';
 import { serverText } from '../i18n/serverMsg';
@@ -125,6 +130,14 @@ interface SessionNodeProps {
   asks: number;
   rc: boolean;
   risk: boolean;
+  /** Local live job: profile avatar shown next to the model line (null: none). Primitives, so the memo still holds. */
+  acctName: string | null;
+  acctLetter: string;
+  acctColor: string;
+  acctBuiltin?: boolean;
+  acctMain?: AccountInfo['main'];
+  /** Local job waiting for a locked profile: "รอปลดล็อก <name>" in the caption (null: none). */
+  acctWaiting: string | null;
   /** At least one pane node is connected to this session. */
   wired: boolean;
   /** A wire being dragged is over this card (it would make a relay link). */
@@ -158,7 +171,14 @@ const SessionNode = memo(function SessionNode(p: SessionNodeProps) {
         </span>
         <span className="cv-text">
           <span className="cv-title">{p.title}</span>
-          <span className="cv-subtitle">{p.subtitle}</span>
+          <span className="cv-subtitle">
+            {p.acctName !== null && (
+              <span className="cv-acct" title={p.acctName}>
+                <AccountAvatar account={{ color: p.acctColor, letter: p.acctLetter, name: p.acctName, builtin: p.acctBuiltin, main: p.acctMain }} size={16} />
+              </span>
+            )}
+            {p.subtitle}
+          </span>
         </span>
       </div>
       <span className="cv-in" aria-hidden="true" />
@@ -190,7 +210,16 @@ const SessionNode = memo(function SessionNode(p: SessionNodeProps) {
         Subagents
       </span>
       <div className="cv-caption" style={{ top: CARD_H + CAPTION_GAP, height: CAPTION_H }}>
-        {p.limit ? <span className="cv-limit">{p.limit}</span> : p.thought || word}
+        {p.limit ? (
+          <span className="cv-limit">{p.limit}</span>
+        ) : p.acctWaiting ? (
+          <span className="cv-acct-wait">
+            <LockGlyph label={t('acct.job.locked')} size={10} />
+            {p.acctWaiting}
+          </span>
+        ) : (
+          p.thought || word
+        )}
       </div>
     </div>
   );
@@ -385,6 +414,8 @@ export function Canvas({
   reveal = null,
 }: CanvasProps) {
   const t = useT();
+  const accounts = useAccounts();
+  const accountsSnap = useMemo(() => ({ accounts: accounts.accounts, defaultAccountId: accounts.defaultAccountId }), [accounts.accounts, accounts.defaultAccountId]);
   const rootRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [view, setView] = useState<View>({ x: 48, y: 48, k: 1 });
@@ -1220,6 +1251,8 @@ export function Canvas({
           const title = validTitle(s.title) ? s.title : s.name;
           const where = s.machineId ? [`@${machineById.get(s.machineId)?.name ?? s.machineId}`] : [];
           const subtitle = [...where, badgeText(s.model, s.effort), ...mode].join(' · ');
+          const avatar = cardAvatar(rn, accountsSnap);
+          const waiting = cardWaiting(rn, accountsSnap);
           return (
             <SessionNode
               key={s.sessionId}
@@ -1234,6 +1267,12 @@ export function Canvas({
               asks={asks}
               rc={badges.includes('RC')}
               risk={mode.includes('bypassPermissions')}
+              acctName={avatar?.name ?? null}
+              acctLetter={avatar?.letter ?? ''}
+              acctColor={avatar?.color ?? ''}
+              acctBuiltin={avatar?.builtin ?? false}
+              acctMain={avatar?.main}
+              acctWaiting={waiting}
               wired={wiredSessions.has(s.sessionId)}
               hot={wireDrag?.over.kind === 'link' && wireDrag.over.toSessionId === s.sessionId}
               onPlus={onPlus}

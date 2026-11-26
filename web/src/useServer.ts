@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 import type { ClipJob, ClipOutroPhrase, ClipPreset, ClipQueueItem, LinkInfo, RunnerState, ServerMsg, SessionInfo, WorklogCard } from '../../shared/protocol';
 import type { MachineAttachment, MachineInfo, SavedSession, ServerMsgNext, SnapshotNext, TailscalePeer } from './protocolNext';
-import { REMOTE_ROUTABLE, SERVER_PORT } from '../../shared/protocol';
+import { APP_LOCK_CLOSE_CODE, REMOTE_ROUTABLE, SERVER_PORT } from '../../shared/protocol';
 import { EMPTY_USAGE, type UsageSnapshot } from '../../shared/usage';
+import { ACCOUNT_COLORS, TERMINAL_ACCOUNT_ID, type AccountInfo, type ConnectEvent, type MainLoginEvent } from '../../shared/accounts';
 import { createCommander, type CommandInput, type CommandResult, type Commander } from './commands';
 import { DEMO_MACHINE, demoSessions } from './demo';
 import { demoLinks, demoMachines, demoSaved } from './demoNext';
+import { reduceAccounts } from './accountsView';
 import { t } from './i18n';
 
 export interface ServerState {
@@ -23,6 +25,12 @@ export interface ServerState {
   attachments: MachineAttachment[];
   peers: TailscalePeer[]; // Tailscale peers offered when adding a machine
   usage: UsageSnapshot; // 5 h / weekly quota + per-session context (empty on an older server)
+  accounts: AccountInfo[]; // account profiles, built-in Terminal login first (empty on an older server)
+  defaultAccountId: string; // profile new jobs use
+  ptyAvailable: boolean; // the server can run the browser login for a profile
+  connect: ConnectEvent | null; // latest browser-login progress event
+  mainLogin: MainLoginEvent | null; // latest login event of the main account (main_login message)
+  appLocked: boolean; // the server refused the socket with APP_LOCK_CLOSE_CODE: no reconnect until cleared
   machine: string | null;
   connected: boolean;
   lastMessageAt: number | null; // epoch ms when the last message arrived in this browser
@@ -43,6 +51,12 @@ export const INITIAL_SERVER_STATE: ServerState = {
   attachments: [],
   peers: [],
   usage: EMPTY_USAGE,
+  accounts: [],
+  defaultAccountId: TERMINAL_ACCOUNT_ID,
+  ptyAvailable: false,
+  connect: null,
+  mainLogin: null,
+  appLocked: false,
   machine: null,
   connected: false,
   lastMessageAt: null,
@@ -77,6 +91,7 @@ export function applyMsg(state: ServerState, msg: ServerMsg | ServerMsgNext, at:
         attachments: Array.isArray(x.attachments) ? x.attachments : state.attachments,
         peers: Array.isArray(x.peers) ? x.peers : state.peers,
         usage: isUsage(msg.usage) ? msg.usage : state.usage,
+        ...reduceAccounts(state, msg),
         machine: msg.machine,
         sessions: uniqueSessions(msg.sessions),
         runners: Object.fromEntries((msg.runners ?? []).map((r) => [r.sessionId, r])),
@@ -84,6 +99,11 @@ export function applyMsg(state: ServerState, msg: ServerMsg | ServerMsgNext, at:
         lastMessageAt: at,
       };
     }
+    case 'accounts':
+    case 'account_connect':
+      return { ...state, ...reduceAccounts(state, msg), lastMessageAt: at };
+    case 'main_login':
+      return { ...state, mainLogin: msg.event, lastMessageAt: at };
     case 'links':
       return { ...state, links: Array.isArray(msg.links) ? msg.links : state.links, lastMessageAt: at };
     case 'saved':
@@ -139,10 +159,14 @@ export function applyMsg(state: ServerState, msg: ServerMsg | ServerMsgNext, at:
   }
 }
 
-export type ServerAction = { kind: 'msg'; msg: ServerMsg | ServerMsgNext; at: number } | { kind: 'connected'; connected: boolean };
+export type ServerAction =
+  | { kind: 'msg'; msg: ServerMsg | ServerMsgNext; at: number }
+  | { kind: 'connected'; connected: boolean }
+  | { kind: 'appLocked'; locked: boolean };
 
 export function serverReducer(state: ServerState, action: ServerAction): ServerState {
   if (action.kind === 'connected') return { ...state, connected: action.connected };
+  if (action.kind === 'appLocked') return { ...state, appLocked: action.locked };
   return applyMsg(state, action.msg, action.at);
 }
 
@@ -181,6 +205,16 @@ export function parseMsg(raw: string): ServerMsg | ServerMsgNext | null {
       return Array.isArray(o.jobs) ? (v as ServerMsg) : null;
     case 'usage':
       return isUsage(o.usage) ? (v as ServerMsg) : null;
+    case 'accounts':
+      return Array.isArray(o.accounts) && typeof o.defaultId === 'string' ? (v as ServerMsg) : null;
+    case 'account_connect': {
+      const e = o.event as Record<string, unknown> | undefined;
+      return e && typeof e.accountId === 'string' && typeof e.status === 'string' ? (v as ServerMsg) : null;
+    }
+    case 'main_login': {
+      const e = o.event as Record<string, unknown> | undefined;
+      return e && typeof e.status === 'string' ? (v as ServerMsg) : null;
+    }
     case 'links':
       return Array.isArray(o.links) ? (v as ServerMsg) : null;
     case 'saved':
@@ -234,17 +268,50 @@ export function isDemoSearch(search: string): boolean {
   return new URLSearchParams(search).get('demo') === '1';
 }
 
+/** The built-in Terminal login plus one demo profile with usage, so the switcher can be previewed. */
+function demoAccounts(now: number): AccountInfo[] {
+  const terminal: AccountInfo = {
+    id: TERMINAL_ACCOUNT_ID, name: 'Main account', color: ACCOUNT_COLORS[0], letter: 'T', note: '', builtin: true,
+    tokenState: 'unset', fingerprint: null, createdAt: 0, tokenAt: null, expiresAt: null,
+    lastCheckAt: null, lastCheckOk: null, usage: null, hidden: false, locked: false, hasPassword: false,
+  };
+  const work: AccountInfo = {
+    id: 'demo-work', name: 'Demo work', color: ACCOUNT_COLORS[2], letter: 'DW', note: '', builtin: false,
+    tokenState: 'set', fingerprint: 'abcd1234ef567890', createdAt: now - 10 * DAY_MS, tokenAt: now - 300 * DAY_MS,
+    expiresAt: now + 65 * DAY_MS, lastCheckAt: now - 60_000, lastCheckOk: true,
+    usage: {
+      fiveHour: { pct: 40, resetsAt: now + 3600_000 },
+      sevenDay: { pct: 72, resetsAt: now + 2 * DAY_MS },
+      updatedAt: now,
+    },
+    hidden: false,
+    locked: false, hasPassword: false,
+  };
+  return [terminal, work];
+}
+
+const DAY_MS = 24 * 3600_000;
+
 function demoState(): ServerState {
   const now = Date.now();
   const sessions = demoSessions(now);
   const m = demoMachines(now, sessions);
-  return { ...INITIAL_SERVER_STATE, sessions, machine: DEMO_MACHINE, links: demoLinks(now, sessions), saved: demoSaved(now, sessions), ...m };
+  return {
+    ...INITIAL_SERVER_STATE,
+    sessions,
+    machine: DEMO_MACHINE,
+    links: demoLinks(now, sessions),
+    saved: demoSaved(now, sessions),
+    accounts: demoAccounts(now),
+    ...m,
+  };
 }
 
 export type ServerApi = ServerState & {
   demo: boolean;
   command: (cmd: CommandInput) => Promise<CommandResult>;
   ask: (question: string) => Promise<CommandResult>; // summary assistant: waits up to 100 s for Haiku
+  clearAppLock: () => void; // call after a successful unlock: the socket reconnects
 };
 
 export function useServer(): ServerApi {
@@ -275,8 +342,12 @@ export function useServer(): ServerApi {
     [demo],
   );
 
+  const clearAppLock = useCallback(() => dispatch({ kind: 'appLocked', locked: false }), []);
+  const appLocked = state.appLocked;
+
   useEffect(() => {
-    if (demo) return;
+    // While the app lock refuses the socket nothing reconnects; clearAppLock() makes this effect run again.
+    if (demo || appLocked) return;
     const url = resolveWsUrl(window.location.hostname, import.meta.env.VITE_CR_WS as string | undefined, import.meta.env.PROD ? window.location.port : undefined);
     let ws: WebSocket | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -296,10 +367,14 @@ export function useServer(): ServerApi {
         commander.current?.onMessage(msg);
         dispatch({ kind: 'msg', msg, at: Date.now() });
       };
-      ws.onclose = () => {
+      ws.onclose = (ev: CloseEvent) => {
         dispatch({ kind: 'connected', connected: false });
         commander.current?.failAll(t('shell.conn.lost'));
         if (closing) return;
+        if (ev?.code === APP_LOCK_CLOSE_CODE) {
+          dispatch({ kind: 'appLocked', locked: true });
+          return;
+        }
         timer = setTimeout(open, delay);
         delay = nextDelay(delay);
       };
@@ -311,7 +386,7 @@ export function useServer(): ServerApi {
       clearTimeout(timer);
       ws?.close();
     };
-  }, [demo]);
+  }, [demo, appLocked]);
 
-  return { ...state, demo, command, ask };
+  return { ...state, demo, command, ask, clearAppLock };
 }

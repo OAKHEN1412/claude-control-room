@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocket, WebSocketServer } from 'ws';
-import { AGENT_TOKEN_HEADER, CLIP_DEFAULT_EFFORT, CLIP_PERMISSION_MODE, SERVER_PORT, type ClientMsg, type ClipJob, type LinkInfo, type MachineInfo, type MachineAttachment, type RunnerState, type SavedSession, type TailscalePeer, type ServerMsg, type SessionInfo, type WorklogCard } from '../../shared/protocol';
+import { AGENT_TOKEN_HEADER, APP_LOCK_CLOSE_CODE, CLIP_DEFAULT_EFFORT, CLIP_PERMISSION_MODE, SERVER_PORT, type ClientMsg, type ClipJob, type LinkInfo, type MachineInfo, type MachineAttachment, type RunnerState, type SavedSession, type TailscalePeer, type ServerMsg, type SessionInfo, type WorklogCard } from '../../shared/protocol';
 import { AgentsApi } from './agentsApi';
 import { AutoResume } from './autoresume';
 import { TerminalLauncher } from './terminal';
@@ -47,6 +47,13 @@ import { codeOf } from './codedError';
 import { UsageService } from './usage';
 import type { UsageSnapshot } from '../../shared/usage';
 import { projectsDir as claudeProjectsDir } from './paths';
+import { AccountService } from './accounts';
+import { AccountsApi } from './accountsApi';
+import { TERMINAL_ACCOUNT_ID, type AccountsView, type ConnectEvent, type MainLoginEvent } from '../../shared/accounts';
+import { MainAccountService } from './mainAccount';
+import { MainAuthApi } from './mainAuthApi';
+import { AppLock } from './appLock';
+import { AuthApi } from './authApi';
 
 const HOST = '127.0.0.1';
 const PING_MS = 5000;
@@ -92,6 +99,12 @@ export interface ServerOptions {
   settings?: SettingsApi; // /api/settings (config.json + ElevenLabs key)
   doctor?: DoctorApi; // /api/doctor
   update?: UpdateApi; // /api/update (status, check, apply)
+  accounts?: AccountService; // account profiles (accounts / account_connect broadcasts, usage per profile)
+  accountsApi?: AccountsApi; // /api/accounts routes (before ClipApi, which answers every other /api/ path)
+  main?: MainAccountService; // the main account's claude.ai login (main_login broadcasts)
+  mainAuthApi?: MainAuthApi; // /api/accounts/main routes (before accountsApi)
+  authApi?: AuthApi; // /api/auth routes (app lock)
+  appLock?: AppLock; // optional app password: guards every HTTP request and the websocket upgrade
   staticDir?: string; // stage 6 production mode: serve the built web from here (SPA fallback)
   log?: LogFn;
   isPidAlive?: (pid: number) => boolean;
@@ -134,10 +147,14 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const allSaved = (): SavedSession[] | undefined => (opts.saved ? (remote ? [...opts.saved.list(), ...remote.savedAll()] : opts.saved.list()) : undefined);
 
   const httpServer = http.createServer((req, res) => {
+    if (opts.appLock?.guard(req, res)) return; // first: nothing else answers while the app is locked
+    if (opts.authApi?.handle(req, res)) return;
     if (opts.gallery?.handle(req, res)) return;
     if (opts.agents?.handle(req, res)) return;
     if (opts.slash?.handle(req, res)) return;
     if (opts.uploads?.handle(req, res)) return; // before ClipApi, which answers every other /api/ path
+    if (opts.mainAuthApi?.handle(req, res)) return; // before accountsApi: /api/accounts/main is not a profile id
+    if (opts.accountsApi?.handle(req, res)) return;
     if (opts.settings?.handle(req, res)) return;
     if (opts.doctor?.handle(req, res)) return;
     if (opts.update?.handle(req, res)) return;
@@ -286,7 +303,11 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
           permissionMode: msg.permissionMode,
           remoteControl: msg.remoteControl,
           attachments: msg.attachments,
+          accountId: msg.accountId,
         });
+      case 'set_account':
+        await runner.setAccount(msg.sessionId, msg.accountId);
+        return msg.sessionId;
       case 'send':
         runner.send(msg.sessionId, msg.text, msg.attachments);
         opts.relay?.onUserSend(msg.sessionId); // a message from the user (not a relay one) restarts the loop counters
@@ -436,6 +457,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     if (m.type === 'set_effort') base.effort = m.effort;
     if (m.type === 'set_permission_mode') Object.assign(base, { permissionMode: m.mode, confirm: m.confirm === true });
     if (m.type === 'set_remote_control') base.remoteControl = m.on;
+    if (m.type === 'set_account') base.accountId = m.accountId;
+    if (m.type === 'start' && m.accountId !== undefined) base.accountId = m.accountId;
     if ('machineId' in m) base.machineId = m.machineId;
     if (m.type === 'machine_add' || m.type === 'machine_update') Object.assign(base, { nameChars: m.name.length, hostChars: m.host.length, userChars: m.user.length, hasKey: m.keyPath !== '', shell: m.shell });
     if (m.type === 'saved_resume' && m.permissionMode) Object.assign(base, { permissionMode: m.permissionMode, confirm: m.confirm === true });
@@ -473,11 +496,24 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     }
   };
 
+  /** The account fields of a snapshot (empty when accounts are not enabled). */
+  const accountsSnapshot = (): { accounts?: AccountsView['accounts']; defaultAccountId?: string; ptyAvailable?: boolean } => {
+    if (!opts.accounts) return {};
+    const v = opts.accounts.view();
+    return { accounts: v.accounts, defaultAccountId: v.defaultId, ptyAvailable: v.ptyAvailable };
+  };
+
   wss.on('connection', (ws, req) => {
     const origin = typeof req.headers.origin === 'string' ? req.headers.origin : undefined;
     ws.on('error', () => {
       // a broken client must not take the server down
     });
+    // App lock: a refused client gets no snapshot and no message handler. Closed before any send, so it is never
+    // in the broadcast set (broadcast only sends to OPEN sockets, and this one is CLOSING from here on).
+    if (opts.appLock && !opts.appLock.wsAllowed(req)) {
+      ws.close(APP_LOCK_CLOSE_CODE, 'LOCKED');
+      return;
+    }
     ws.on('message', (data, isBinary) => {
       if (isBinary) return;
       void handleCommand(ws, origin, data.toString('utf8'));
@@ -493,6 +529,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       ...(opts.usage ? { usage: opts.usage.snapshot() } : {}),
       ...(opts.saved ? { saved: allSaved() } : {}),
       ...(opts.machines ? { ...opts.machines.view() } : {}),
+      ...accountsSnapshot(),
     });
     if (opts.clips) send(ws, { type: 'clips', serverTime: now(), ...opts.clips.view() });
     if (opts.worklog) send(ws, { type: 'worklog', serverTime: now(), cards: opts.worklog.cards() });
@@ -531,8 +568,24 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const onGoneForMachines = (sessionId: string) => opts.machines?.onSessionGone(sessionId);
   const onUsage = (usage: UsageSnapshot) => broadcast({ type: 'usage', serverTime: now(), usage });
   opts.usage?.on('change', onUsage);
-  const onStreamEvent = (id: string, ev: unknown) => opts.usage?.ingest(id, ev);
-  if (opts.usage) runner?.on('stream_event', onStreamEvent);
+  const onStreamEvent = (id: string, ev: unknown) => {
+    const acct = runner?.accountOf(id) ?? TERMINAL_ACCOUNT_ID;
+    // Only rate_limit_event lines are checked for the type first, so the hot path stays cheap.
+    const isRate = typeof ev === 'object' && ev !== null && (ev as { type?: unknown }).type === 'rate_limit_event';
+    // The global header quota belongs to the stored login (Terminal) only: a token job's rate_limit_event is that profile's.
+    if (!(isRate && acct !== TERMINAL_ACCOUNT_ID)) opts.usage?.ingest(id, ev);
+    // Usage per profile.
+    if (opts.accounts && isRate) opts.accounts.recordUsage(acct, ev);
+  };
+  if (opts.usage || opts.accounts) runner?.on('stream_event', onStreamEvent);
+  const onAccounts = (v: AccountsView) => broadcast({ type: 'accounts', serverTime: now(), accounts: v.accounts, defaultId: v.defaultId, ptyAvailable: v.ptyAvailable });
+  const onAccountConnect = (event: ConnectEvent) => broadcast({ type: 'account_connect', serverTime: now(), event });
+  if (opts.accounts) {
+    opts.accounts.on('change', onAccounts);
+    opts.accounts.on('connect', onAccountConnect);
+  }
+  const onMainLogin = (event: MainLoginEvent) => broadcast({ type: 'main_login', serverTime: now(), event });
+  opts.main?.on('login', onMainLogin);
   const onLinks = (links: LinkInfo[]) => broadcast({ type: 'links', serverTime: now(), links });
   const onRunnerTurnEnd = (e: TurnEnd) => opts.relay?.onSourceTurnEnd(e.sessionId, e.text, { isError: e.isError, interrupted: e.interrupted });
   // A Runner job is reported by its own stream; the watcher's transcript event for the same session is a duplicate.
@@ -596,6 +649,11 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       clearInterval(pingTimer);
       opts.usage?.off('change', onUsage);
       runner?.off('stream_event', onStreamEvent);
+      if (opts.accounts) {
+        opts.accounts.off('change', onAccounts);
+        opts.accounts.off('connect', onAccountConnect);
+      }
+      opts.main?.off('login', onMainLogin);
       watcher.off('session', onSessionEvent);
       watcher.off('removed', onRemoved);
       runner?.off('change', onRunnerChange);
@@ -683,17 +741,41 @@ async function main(): Promise<void> {
   // The ElevenLabs key comes from the secret chain (env, DPAPI store, vault CLI) and is kept in memory for clip children.
   const chain = createDefaultChain();
   const keys = new ElevenKeyHolder(chain);
-  const runner = new Runner({
+  // SQLite first: the account profiles and the worklog share it.
+  const db = new WorklogDb(process.env.CR_DB_FILE || undefined);
+  // Account profiles (tokens come from the secret chain; loaded before anything resumes a job).
+  // The main account (the login a plain `claude` run uses). Created before AccountService: its status shows on the Terminal row.
+  // Its runner check is lazy, so `runner` (declared below) is only read once the server is running.
+  const main: MainAccountService = new MainAccountService({
+    claudeBin: process.env.CR_CLAUDE_BIN,
+    busyTerminalJobs: (): boolean => runner.states().some((s) => s.alive && s.busy && (runner.accountOf(s.sessionId) ?? 'terminal') === 'terminal'),
+    log: (m) => console.log(m),
+  });
+  const accounts: AccountService = new AccountService({ db, secrets: chain, claudeBin: process.env.CR_CLAUDE_BIN, log: (m) => console.log(m), main: { info: () => main.info() } });
+  await accounts.init();
+  main.on('status', () => accounts.notifyChanged());
+  const accountsApi = new AccountsApi({ originAllowed, accounts });
+  const mainAuthApi = new MainAuthApi({ originAllowed, main });
+  // App lock: the config dir's appLock record (no record = no lock). Sessions live in this process only.
+  const appLock = new AppLock({ dir: dataDir() });
+  const authApi = new AuthApi({ originAllowed, lock: appLock });
+  const runner: Runner = new Runner({
     allowedCwds,
     extraArgs,
     claudeBin: process.env.CR_CLAUDE_BIN,
     uploads: uploadStore,
+    accounts,
     // A clip job resumed after a server restart gets its key again (the per-process jobEnv map is empty then).
     envForSession: (id) => (clipsRef?.find(id) != null ? keys.clipEnv() : {}),
   });
   runnerRef = runner;
+  // A profile unlocked from the app: its jobs that waited for the password start now.
+  accounts.on('unlocked', (id: string) => {
+    const n = runner.resumeWaiting(id);
+    if (n > 0) console.log(`resumed ${n} waiting job(s) for account ${id}`);
+  });
+  runner.on('waiting_failed', (e: { sessionId: string }) => console.log(`waiting job ${e.sessionId} could not be resumed`));
   // Stage 4: SQLite worklog + the Haiku helper (no tools). CR_NO_SUMMARY=1 turns the model off (cards stay deterministic).
-  const db = new WorklogDb(process.env.CR_DB_FILE || undefined);
   const haiku = process.env.CR_NO_SUMMARY === '1' ? undefined : claudeHaiku({ claudeBin: process.env.CR_CLAUDE_BIN });
   const idleRaw = Number(process.env.CR_IDLE_MS);
   const worklog = new Worklog({
@@ -784,7 +866,8 @@ async function main(): Promise<void> {
     busy: () => busyCounts(runner.states(), clips.jobs(), (id) => runner.isAlive(id)),
     startUpdater: async (tag) => spawnUpdaterDetached({ appDir: repoRoot, tag, pid: process.pid, port: listenPort, dataDir: dataDir(), skills: false }),
   });
-  const server = await startServer({ watcher, port, runner, allowedCwds, worklog, observer, clips, api, gallery, agents, uploads, slash, settings, doctor, update: updates, relay, saved, machines, usage, terminal, remote, staticDir, log: cmdLog });
+  const server = await startServer({ watcher, port, runner, allowedCwds, worklog, observer, clips, api, gallery, agents, uploads, slash, settings, doctor, update: updates, relay, saved, machines, usage, terminal, remote, staticDir, log: cmdLog, accounts, accountsApi, main, mainAuthApi, authApi, appLock });
+  void main.status(true); // the main account's login state, for the Terminal row (not awaited)
   listenPort = server.port;
   if (serveWeb) updateChecker.start();
   // Live Runner jobs survive a server restart: remembered in SQLite, resumed idle here. CR_NO_AUTORESUME=1 turns it off.
@@ -832,6 +915,8 @@ async function main(): Promise<void> {
     remote.stop();
     updateChecker.stop();
     updates.stop();
+    accounts.dispose(); // a running setup-token capture or check must not outlive the server; late timers become no-ops
+    main.dispose(); // cancels a running `claude auth login` pty
     watcher.stop();
     db.close();
     await server.close();

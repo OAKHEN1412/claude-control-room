@@ -1,5 +1,6 @@
 // Schema validation for browser -> server commands. Hand-written (no dependencies); every field is
 // checked and unknown message types / fields of the wrong type are rejected.
+import { ACCOUNT_ID_RE } from '../../shared/accounts';
 import {
   CLIP_BUILDER_MODELS,
   CLIP_CAST,
@@ -156,7 +157,16 @@ export function parseClientMsg(raw: unknown): Parsed {
       if (prompt === null) return bad('prompt empty or too long');
       const flags = parseJobFlags(raw);
       if (typeof flags === 'string') return bad(flags);
-      return { ok: true, msg: { type, reqId, cwd: raw.cwd, model: raw.model as string, effort: raw.effort, prompt, ...(atts.length > 0 ? { attachments: atts } : {}), ...flagFields(flags) } };
+      if (raw.accountId !== undefined && (typeof raw.accountId !== 'string' || !ACCOUNT_ID_RE.test(raw.accountId))) return bad('accountId invalid');
+      const accountId = raw.accountId as string | undefined;
+      return {
+        ok: true,
+        msg: {
+          type, reqId, cwd: raw.cwd, model: raw.model as string, effort: raw.effort, prompt,
+          ...(atts.length > 0 ? { attachments: atts } : {}), ...flagFields(flags),
+          ...(accountId !== undefined ? { accountId } : {}),
+        },
+      };
     }
     case 'send': {
       const s = sid();
@@ -187,6 +197,12 @@ export function parseClientMsg(raw: unknown): Parsed {
       if (!s) return bad('sessionId invalid');
       if (launchableModel(raw.model) === null) return bad('model not available');
       return { ok: true, msg: { type, reqId, sessionId: s, model: raw.model as string } };
+    }
+    case 'set_account': {
+      const s = sid();
+      if (!s) return bad('sessionId invalid');
+      if (typeof raw.accountId !== 'string' || !ACCOUNT_ID_RE.test(raw.accountId)) return bad('accountId invalid');
+      return { ok: true, msg: { type, reqId, sessionId: s, accountId: raw.accountId } };
     }
     case 'set_effort': {
       const s = sid();

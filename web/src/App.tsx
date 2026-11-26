@@ -38,6 +38,8 @@ import { resolvePanes } from './selection';
 import { useServer } from './useServer';
 import { useSeams } from './canvas/useSeams';
 import { useLang, useT, type TKey } from './i18n';
+import { AccountsHost } from './components/AccountsHost';
+import { AppLockPage } from './components/AppLockPage';
 
 const STACK_QUERY = '(max-width: 899px)';
 
@@ -261,8 +263,21 @@ export function App() {
     </Widget>
   );
 
+  // The server refused the socket with the app lock close code: show the lock page until the password is entered.
+  if (server.appLocked) {
+    return (
+      <AppLockPage
+        onUnlocked={() => {
+          server.clearAppLock();
+          window.location.reload();
+        }}
+      />
+    );
+  }
+
   return (
     <div className={`cr-root${stacked ? ' is-stacked' : ''}`}>
+    <AccountsHost server={server}>
       <Header
         machine={server.machine}
         connected={server.connected}
@@ -384,6 +399,7 @@ export function App() {
         />
       )}
       <SetupHost />
+    </AccountsHost>
     </div>
   );
 }

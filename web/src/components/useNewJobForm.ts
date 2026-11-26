@@ -5,6 +5,10 @@ import { cwdChoices, jobFlags } from '../control';
 import type { MachineInfo } from '../protocolNext';
 import { useCommand, type Command } from './Controls';
 import { useAttachments } from './useAttachments';
+import { useAccounts } from '../accountsContext';
+import { useT } from '../i18n';
+import { accountIdToSend, accountOptions, resolveAccountSelection, showAccountSelect } from '../newJobAccount';
+import { isLockedFailure, isLockedProfile } from '../accountJobLogic';
 
 export interface NewJobFormOptions {
   cwds: string[];
@@ -34,6 +38,12 @@ export function useNewJobForm({ cwds, command, disabledReason, onStarted, machin
   const [rc, setRc] = useState(false);
   const { run, error, working } = useCommand(command);
   const att = useAttachments({ disabledReason });
+  // Account choice: '' = not touched, so the start command keeps the server default.
+  const acct = useAccounts();
+  const tr = useT();
+  const [pickedAccount, setPickedAccount] = useState('');
+  const accountOpts = accountOptions(acct.accounts, acct.defaultAccountId, Date.now(), { terminal: tr('acct.terminal.name'), limit: tr('acct.limit') });
+  const accountId = resolveAccountSelection(accountOpts, pickedAccount, acct.defaultAccountId);
 
   // Keep a valid folder selected as the server list arrives.
   const key = choices.join('|');
@@ -42,14 +52,44 @@ export function useNewJobForm({ cwds, command, disabledReason, onStarted, machin
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const canStart = !disabledReason && !working && cwd !== '' && !att.uploading && (prompt.trim() !== '' || att.ids.length > 0);
-  const start = async () => {
-    if (!canStart) return;
-    const r = await run({ type: 'start', cwd, model, effort, prompt, ...(att.ids.length > 0 && !target ? { attachments: att.ids } : {}), ...jobFlags(permMode, bypassOk, rc), ...(target ? { machineId: target.id } : {}) });
+  // Sends the start command. Called directly once the chosen profile is known to be usable.
+  const launch = async () => {
+    const sendAccount = accountIdToSend(pickedAccount, acct.defaultAccountId, !!target);
+    const r = await run({
+      type: 'start',
+      cwd,
+      model,
+      effort,
+      prompt,
+      ...(att.ids.length > 0 && !target ? { attachments: att.ids } : {}),
+      ...jobFlags(permMode, bypassOk, rc),
+      ...(target ? { machineId: target.id } : {}),
+      ...(sendAccount !== undefined ? { accountId: sendAccount } : {}),
+    });
     if (r.ok && r.sessionId) {
       setPrompt('');
       att.clear();
       onStarted(r.sessionId);
+    } else if (!target && isLockedFailure(r)) {
+      // The server refuses a locked profile: unlock it, then start again.
+      acct.openUnlockDialog(accountId, () => void launch());
     }
+  };
+
+  // A locked profile (chosen, or the default when nothing was picked) is unlocked before any start command is sent.
+  const start = async () => {
+    if (!canStart) return;
+    if (!target && isLockedProfile(acct.accounts, accountId)) {
+      acct.openUnlockDialog(accountId, () => void launch());
+      return;
+    }
+    await launch();
+  };
+
+  // Picking a locked profile opens the unlock dialog; the pick is kept only once it is unlocked.
+  const pickAccount = (id: string) => {
+    if (isLockedProfile(acct.accounts, id)) acct.openUnlockDialog(id, () => setPickedAccount(id));
+    else setPickedAccount(id);
   };
 
   return {
@@ -75,6 +115,11 @@ export function useNewJobForm({ cwds, command, disabledReason, onStarted, machin
     },
     rc,
     setRc,
+    accountOptions: accountOpts,
+    accountId,
+    setAccountId: pickAccount,
+    accountLocked: !target && isLockedProfile(acct.accounts, accountId),
+    showAccount: showAccountSelect(accountOpts, !!target),
     att,
     canStart,
     start,

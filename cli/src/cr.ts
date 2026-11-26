@@ -3,12 +3,15 @@
 import path from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
+import { resolveAccount } from './accounts.ts';
+import { APP_LOCK_HINT, isAppLockClose, readStdinLine, readTtyPassword, unlockIfRequired } from './auth.ts';
+import type { AuthIo, TtyInput } from './auth.ts';
 import { parseArgs, resolvePrefix, USAGE } from './args.ts';
 import type { Command } from './args.ts';
 import { runAttach } from './attach.ts';
 import { CrClient } from './client.ts';
 import type { State } from './client.ts';
-import { formatList, listRows, makePaint } from './format.ts';
+import { formatList, listRows, makePaint, profileLabel } from './format.ts';
 import type { Paint } from './format.ts';
 import { runUpdateCommand } from './update.ts';
 
@@ -20,6 +23,9 @@ export function explain(error: string | undefined): string {
   }
   if (e.startsWith('cwd does not exist')) return `ไม่พบโฟลเดอร์นี้\n  (${e})`;
   if (e.startsWith('model not available')) return `โมเดลนี้ใช้ไม่ได้\n  (${e})`;
+  if (e.startsWith('account is locked')) {
+    return `โปรไฟล์นี้ล็อกด้วยรหัสผ่าน — ปลดล็อกในหน้าเว็บก่อน (กดที่โปรไฟล์ แล้วใส่รหัสผ่าน) หรือใช้ --account เลือกโปรไฟล์อื่น\n  (${e})`;
+  }
   if (e.includes('ยังเปิดอยู่ใน terminal') || e.includes('terminal process is still running')) {
     return `${e}\n  ปิด session นั้นใน terminal ก่อน (พิมพ์ /exit) แล้วรัน cr resume อีกครั้ง`;
   }
@@ -46,8 +52,18 @@ async function ask(question: string): Promise<string> {
   });
 }
 
-async function attachTo(port: number, id: string, paint: Paint): Promise<number> {
-  return runAttach({ port, sessionId: id, paint, stdin: process.stdin, stdout: process.stdout });
+async function attachTo(port: number, id: string, paint: Paint, cookie: string | undefined): Promise<number> {
+  return runAttach({ port, sessionId: id, paint, stdin: process.stdin, stdout: process.stdout, cookie });
+}
+
+/** Real stdin/stderr wiring for the app-lock unlock. Prompts and messages go to stderr; nothing is echoed. */
+function authIo(): AuthIo {
+  return {
+    fetch: globalThis.fetch,
+    stdinIsTTY: !!process.stdin.isTTY,
+    readStdinLine: () => readStdinLine(process.stdin),
+    readTtyPassword: (prompt) => readTtyPassword(process.stdin as unknown as TtyInput, process.stderr, prompt),
+  };
 }
 
 export async function main(argv: string[]): Promise<number> {
@@ -63,10 +79,25 @@ export async function main(argv: string[]): Promise<number> {
     return 0;
   }
   if (command.kind === 'update') return runUpdateCommand(command); // no server needed: the updater restarts it
-  const client = new CrClient(port);
+  // App lock: unlock once per process when the server asks for it. The cookie lives in memory only.
+  const auth = await unlockIfRequired({
+    base: `http://127.0.0.1:${port}`,
+    pinStdin: parsed.pinStdin,
+    io: authIo(),
+    notify: (msg) => console.error(paint.dim(msg)),
+  });
+  if (!auth.ok) {
+    console.error(paint.red(auth.error));
+    return 1;
+  }
+  const client = new CrClient(port, { cookie: auth.cookie });
   try {
     await client.connect();
   } catch (e) {
+    if (isAppLockClose(e)) {
+      console.error(paint.red(APP_LOCK_HINT));
+      return 1;
+    }
     console.error(
       paint.red(`ต่อ Control Room ไม่ได้ที่ 127.0.0.1:${port} (${e instanceof Error ? e.message : String(e)})`) +
         `\n  เซิร์ฟเวอร์รันอยู่ไหม? (npm run start) ถ้าใช้พอร์ตอื่นให้ตั้ง CR_PORT หรือ --port`,
@@ -87,7 +118,7 @@ async function run(command: Exclude<Command, { kind: 'help' }>, client: CrClient
     case 'update':
       return runUpdateCommand(command);
     case 'ls': {
-      const rows = listRows([...st.sessions.values()], [...st.runners.values()], command.all);
+      const rows = listRows([...st.sessions.values()], [...st.runners.values()], command.all, st.accounts);
       for (const l of formatList(rows, paint, process.stdout.columns ?? 100)) console.log(l);
       return 0;
     }
@@ -105,7 +136,7 @@ async function run(command: Exclude<Command, { kind: 'help' }>, client: CrClient
         return 1;
       }
       client.close();
-      return attachTo(port, r.id, paint);
+      return attachTo(port, r.id, paint, client.cookie);
     }
     case 'takeover': {
       const r = resolvePrefix(command.id, [...st.sessions.keys()]);
@@ -116,7 +147,7 @@ async function run(command: Exclude<Command, { kind: 'help' }>, client: CrClient
       if (st.runners.get(r.id)?.alive) {
         console.error(paint.dim(`${r.id.slice(0, 8)} คุมจากเว็บอยู่แล้ว — ต่อเข้าไปเลย`));
         client.close();
-        return attachTo(port, r.id, paint);
+        return attachTo(port, r.id, paint, client.cookie);
       }
       const info = st.sessions.get(r.id);
       const label = info ? `${info.name || r.id.slice(0, 8)} (${info.title || '-'})` : r.id.slice(0, 8);
@@ -142,27 +173,46 @@ async function run(command: Exclude<Command, { kind: 'help' }>, client: CrClient
         return 0;
       }
       client.close();
-      return attachTo(port, r.id, paint);
+      return attachTo(port, r.id, paint, client.cookie);
     }
     case 'new': {
+      // resolve --account before anything starts: an unknown or unusable profile stops here, no job is started
+      let accountId: string | undefined;
+      if (command.account !== undefined) {
+        const r = resolveAccount(command.account, st.accounts);
+        if (!r.ok) {
+          console.error(paint.red(r.error));
+          return 1;
+        }
+        accountId = r.id;
+      }
       let prompt = command.prompt;
       if (prompt === '' && process.stdin.isTTY) prompt = (await ask('prompt> ')).trim();
       if (prompt === '') {
         console.error(paint.red('ต้องมี prompt: cr new "สิ่งที่ให้ทำ"'));
         return 2;
       }
-      const a = await client.send({ type: 'start', cwd: path.resolve(command.cwd), model: command.model, effort: command.effort, prompt, ...extra });
+      const a = await client.send({
+        type: 'start',
+        cwd: path.resolve(command.cwd),
+        model: command.model,
+        effort: command.effort,
+        prompt,
+        ...(accountId !== undefined ? { accountId } : {}),
+        ...extra,
+      });
       if (!a.ok || !a.sessionId) {
         console.error(paint.red(`เริ่มงานไม่สำเร็จ: ${explain(a.error)}`));
         return 1;
       }
-      console.error(paint.dim(`เริ่มงาน ${a.sessionId.slice(0, 8)} (${command.model}, ${command.effort}) ใน ${command.cwd}`));
+      const who = accountId !== undefined ? ` ด้วยโปรไฟล์ ${profileLabel(accountId, st.accounts)}` : '';
+      console.error(paint.dim(`เริ่มงาน ${a.sessionId.slice(0, 8)} (${command.model}, ${command.effort}) ใน ${command.cwd}${who}`));
       if (!command.attach) {
         console.log(a.sessionId);
         return 0;
       }
       client.close();
-      return attachTo(port, a.sessionId, paint);
+      return attachTo(port, a.sessionId, paint, client.cookie);
     }
     case 'resume': {
       const r = resolvePrefix(command.id, allIds(st));
@@ -182,7 +232,7 @@ async function run(command: Exclude<Command, { kind: 'help' }>, client: CrClient
         console.error(paint.dim(`เปิดงาน ${r.id.slice(0, 8)} ต่อแล้ว (idle — ยังไม่ได้สั่งอะไร)`));
       }
       client.close();
-      return attachTo(port, r.id, paint);
+      return attachTo(port, r.id, paint, client.cookie);
     }
   }
 }

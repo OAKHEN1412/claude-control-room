@@ -1,4 +1,5 @@
 // View model for the top-bar usage rings (pure: no DOM, `now` is passed in).
+import { TERMINAL_ACCOUNT_ID, type AccountInfo, type AccountUsage, type AccountUsageWindow } from '../../shared/accounts';
 import type { RunnerState, SessionInfo } from '../../shared/protocol';
 import { type SessionUsage, type UsageLevel, type UsageQuota, type UsageSnapshot, ageMsg, countdownMsg, formatTokens, isStale, levelOf } from '../../shared/usage';
 import { t, type TKey } from './i18n';
@@ -84,4 +85,45 @@ export function contextRing(session: SessionUsage | null, selectedFollowed: bool
   lines.push(`${t(selectedFollowed ? 'shell.usage.selectedSession' : 'shell.usage.latestSession')}: ${nameOf(session.sessionId)}${session.model ? ` · ${session.model}` : ''}`);
   lines.push(`${t('shell.usage.updatedAt', { age: ageText(session.updatedAt, now) })}${stale ? t('shell.usage.stale') : ''}`);
   return { ...base, pct, level: levelOf(pct), dim: stale, text: String(Math.round(pct)), lines };
+}
+
+/** One profile window as a ring quota (its updatedAt is the profile's); null when the window is unknown. */
+export function profileQuota(w: AccountUsageWindow | null, updatedAt: number): UsageQuota | null {
+  if (!w) return null;
+  return { pct: w.pct, resetsAt: w.resetsAt, updatedAt, sessionId: null, model: null };
+}
+
+/** A profile's usage in the global snapshot's shape. No usage -> both windows null; sessions are kept from the global snapshot. */
+export function usageForProfile(global: UsageSnapshot, usage: AccountUsage | null): UsageSnapshot {
+  const at = usage?.updatedAt ?? 0;
+  return {
+    fiveHour: profileQuota(usage?.fiveHour ?? null, at),
+    sevenDay: profileQuota(usage?.sevenDay ?? null, at),
+    sessions: global.sessions,
+  };
+}
+
+/** The snapshot the rings show for the header profile: the global one for Terminal, the profile's own usage otherwise. */
+export function effectiveUsage(global: UsageSnapshot, accountId: string, accounts: AccountInfo[]): UsageSnapshot {
+  if (accountId === TERMINAL_ACCOUNT_ID) return global;
+  const profile = accounts.find((a) => a.id === accountId);
+  return usageForProfile(global, profile?.usage ?? null);
+}
+
+/** True when a non-Terminal header profile has no usage record yet (an unknown profile counts as not yet fetched). */
+export function awaitingProfileUsage(accountId: string, accounts: AccountInfo[]): boolean {
+  if (accountId === TERMINAL_ACCOUNT_ID) return false;
+  return accounts.find((a) => a.id === accountId)?.usage == null;
+}
+
+/** Tooltip line naming the header profile ("โปรไฟล์: <name>"); Terminal uses its own display name. */
+export function profileLabel(accountId: string, accounts: AccountInfo[]): string {
+  const name = accountId === TERMINAL_ACCOUNT_ID ? t('acct.terminal.name') : (accounts.find((a) => a.id === accountId)?.name ?? accountId);
+  return t('acct.usage.profile', { name });
+}
+
+/** Adds the profile line to a quota ring's tooltip; while the profile awaits its first usage, shows the fetching text instead of the no-quota text. */
+export function withProfile(view: RingView, label: string, fetching: boolean): RingView {
+  const lines = fetching ? [t('acct.usage.fetching')] : view.lines;
+  return { ...view, lines: [...lines, label] };
 }

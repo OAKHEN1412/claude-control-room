@@ -2,6 +2,7 @@
 // requests by reqId. A Node client sends no Origin header, which the server accepts (browsers need a loopback one).
 import { EventEmitter } from 'node:events';
 import WebSocket from 'ws';
+import type { AccountInfo } from '../../shared/accounts.ts';
 import type { RunnerState, SavedSession, ServerMsg, SessionInfo } from '../../shared/protocol.ts';
 
 export interface Ack {
@@ -16,10 +17,12 @@ export interface State {
   runners: Map<string, RunnerState>;
   saved: SavedSession[];
   cwds: string[];
+  accounts: AccountInfo[];
+  defaultAccountId: string;
 }
 
 export function emptyState(): State {
-  return { sessions: new Map(), runners: new Map(), saved: [], cwds: [] };
+  return { sessions: new Map(), runners: new Map(), saved: [], cwds: [], accounts: [], defaultAccountId: '' };
 }
 
 /** Applies one server message to the state. Returns true when the message changed it. */
@@ -30,6 +33,12 @@ export function applyMessage(st: State, msg: ServerMsg): boolean {
       st.runners = new Map((msg.runners ?? []).map((r) => [r.sessionId, r]));
       if (msg.saved) st.saved = msg.saved;
       if (msg.cwds) st.cwds = msg.cwds;
+      if (msg.accounts) st.accounts = msg.accounts;
+      if (msg.defaultAccountId !== undefined) st.defaultAccountId = msg.defaultAccountId;
+      return true;
+    case 'accounts':
+      st.accounts = msg.accounts;
+      st.defaultAccountId = msg.defaultId;
       return true;
     case 'session':
       st.sessions.set(msg.session.sessionId, msg.session);
@@ -52,22 +61,29 @@ export function applyMessage(st: State, msg: ServerMsg): boolean {
   }
 }
 
+export interface CrClientOptions {
+  /** `cr_session=<sid>` from the app-lock unlock. Sent as the WebSocket Cookie header. Kept in memory only. */
+  cookie?: string;
+}
+
 export class CrClient extends EventEmitter {
   readonly state: State = emptyState();
   private ws: WebSocket | null = null;
+  readonly cookie: string | undefined;
   private n = 0;
   private readonly waiting = new Map<string, { resolve: (a: Ack) => void; timer: ReturnType<typeof setTimeout> }>();
   readonly port: number;
 
-  constructor(port: number) {
+  constructor(port: number, opts: CrClientOptions = {}) {
     super();
     this.port = port;
+    this.cookie = opts.cookie;
   }
 
   /** Resolves after the first snapshot; rejects when the server cannot be reached. */
   connect(timeoutMs = 4000): Promise<void> {
     return new Promise((resolve, reject) => {
-      const ws = new WebSocket(`ws://127.0.0.1:${this.port}`);
+      const ws = new WebSocket(`ws://127.0.0.1:${this.port}`, this.cookie ? { headers: { Cookie: this.cookie } } : undefined);
       this.ws = ws;
       let settled = false;
       const timer = setTimeout(() => {
@@ -107,7 +123,7 @@ export class CrClient extends EventEmitter {
         }
         if (changed) this.emit('change', msg);
       });
-      ws.on('close', () => {
+      ws.on('close', (code: number) => {
         for (const [id, w] of this.waiting) {
           clearTimeout(w.timer);
           w.resolve({ ok: false, error: 'การเชื่อมต่อหลุด' });
@@ -116,7 +132,7 @@ export class CrClient extends EventEmitter {
         if (!settled) {
           settled = true;
           clearTimeout(timer);
-          reject(new Error('closed'));
+          reject(Object.assign(new Error('closed'), { code })); // 4401 = app lock, see auth.ts
         }
         this.emit('close');
       });

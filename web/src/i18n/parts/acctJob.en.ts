@@ -1,0 +1,25 @@
+import type { acctJobTh } from './acctJob.th';
+// English strings for the account chip and the usage-limit switch card. Must match acctJobTh keys.
+export const acctJobEn: Record<keyof typeof acctJobTh, string> = {
+  'acct.job.chipAria': "This job's profile",
+  'acct.job.menuAria': 'Choose a profile',
+  'acct.job.current': 'Current profile',
+  'acct.job.pending': 'Switching to {name}…',
+  'acct.job.notAlive': 'This job is not running, so the profile cannot be changed now.',
+  'acct.job.confirmAria': 'Confirm profile switch',
+  'acct.job.confirmText': 'Switch to {name} · {detail}',
+  'acct.job.switchWhenBusy': 'It waits for this turn to finish first. Pending commands are kept.',
+  'acct.job.switchNow': 'The job restarts on this profile (a few seconds); the conversation is kept.',
+  'acct.job.confirm': 'Switch account',
+  'acct.job.cancel': 'Cancel',
+  'acct.job.switching': 'Switching…',
+  'acct.job.limitHeading': 'Continue with another profile',
+  'acct.job.limitNote': 'Nothing switches by itself. You have to pick one.',
+  'acct.job.limitHint': 'No other profile is ready to use yet.',
+  'acct.job.limitManage': 'Add a profile on the accounts page',
+  'acct.job.locked': 'Locked',
+  'acct.job.unlock': 'Unlock',
+  'acct.job.waitingUnlock': 'Waiting to unlock {name}',
+  'acct.job.row': 'Account',
+  'acct.job.rowAria': "This job's account",
+};

@@ -1,0 +1,28 @@
+import type { acctMainTh } from './acctMain.th';
+// English main account strings. Must match acctMainTh keys.
+export const acctMainEn: Record<keyof typeof acctMainTh, string> = {
+  'acct.main.title': 'Sign in to the main account',
+  'acct.main.explain': 'The main account is the Claude Code login of this machine. It is shared with claude in the terminal.',
+  'acct.main.start': 'Sign in to the main account',
+  'acct.main.retry': 'Try again',
+  'acct.main.cancel': 'Cancel',
+  'acct.main.starting': 'Starting sign-in…',
+  'acct.main.waiting': 'Waiting for approval in the browser…',
+  'acct.main.openLink': 'Open the sign-in page myself',
+  'acct.main.code.label': 'Paste the code from the browser (if asked)',
+  'acct.main.code.submit': 'Send code',
+  'acct.main.code.invalid': 'Invalid code. Copy it again.',
+  'acct.main.success': 'Signed in',
+  'acct.main.failed': 'Sign-in failed',
+  'acct.main.timeout': 'Timed out waiting for approval',
+  'acct.main.cancelled': 'Sign-in cancelled',
+  'acct.main.noPty': 'This machine cannot sign in automatically. Sign in in a terminal with claude auth login, then press check again.',
+  'acct.main.recheck': 'Check again',
+  'acct.main.notLoggedIn': 'No sign-in of the main account was found yet',
+  'acct.main.err.LOGIN_FAILED': 'Sign-in failed. Try again.',
+  'acct.main.err.LOGIN_BUSY': 'A sign-in is already running',
+  'acct.main.err.NO_LOGIN_RUNNING': 'No sign-in is waiting for a code',
+  'acct.main.err.CODE_INVALID': 'Invalid code. Copy it again.',
+  'acct.main.err.PTY_UNAVAILABLE': 'This machine cannot sign in automatically',
+  'acct.main.err.BUSY_JOBS': 'Jobs are running. Try again later.',
+};

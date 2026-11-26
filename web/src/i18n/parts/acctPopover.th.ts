@@ -1,0 +1,21 @@
+// Account UI strings for the header pill, the popover and the switch toast (Thai, source of truth). Keys prefixed acct.pop.
+export const acctPopoverTh = {
+  'acct.pop.pill': 'โปรไฟล์: {name}',
+  'acct.pop.menu': 'เลือกโปรไฟล์',
+  'acct.pop.hello': 'สวัสดี, {name}',
+  'acct.pop.current': 'ค่าเริ่มต้นตอนนี้',
+  'acct.pop.five': '5 ชม.',
+  'acct.pop.week': 'สัปดาห์',
+  'acct.pop.manage': 'จัดการโปรไฟล์',
+  'acct.pop.others': 'โปรไฟล์อื่น',
+  'acct.pop.add': '+ เพิ่มโปรไฟล์',
+  'acct.pop.footer': 'เปลี่ยนที่นี่ = ค่าเริ่มต้นของงานใหม่ · งานที่รันอยู่ไม่ถูกย้าย',
+  'acct.pop.toast': 'งานใหม่จะใช้ {name} · งานที่รันอยู่ยังใช้บัญชีเดิม',
+  'acct.pop.moveIdle': 'ย้ายงานที่ว่างอยู่ไปด้วย',
+  'acct.pop.moved': 'ย้าย {n} งานแล้ว',
+  'acct.pop.noneIdle': 'ไม่มีงานที่ว่างให้ย้าย',
+  'acct.pop.moveFailed': 'ย้ายไม่สำเร็จ: {error}',
+  'acct.pop.dismiss': 'ปิด',
+  'acct.pop.locked': 'ล็อก',
+  'acct.pop.unlockCurrent': 'ล็อกอยู่ — กดเพื่อปลดล็อก',
+};

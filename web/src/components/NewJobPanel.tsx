@@ -7,6 +7,7 @@ import { PermissionModeField, RemoteToggle, type Command } from './Controls';
 import { AttachButton, AttachChips, DropOverlay } from './AttachBar';
 import { Composer } from './Composer';
 import { useNewJobForm } from './useNewJobForm';
+import { LockGlyph } from './AccountChip';
 import type { MachineInfo } from '../protocolNext';
 import { useT } from '../i18n';
 import './control.css';
@@ -54,6 +55,21 @@ export function NewJobPanel({ cwds, command, disabledReason, onStarted, onClose,
           ))}
         </select>
       </div>
+      {f.showAccount && (
+        <div className="cn-field" style={{ flex: '0 1 200px' }}>
+          <label htmlFor="cn-account">{t('acct.new.account')}</label>
+          <span className="cn-account-row">
+            <select id="cn-account" className="cc-sel" value={f.accountId} onChange={(e) => f.setAccountId(e.target.value)}>
+              {f.accountOptions.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            {f.accountLocked && <LockGlyph label={t('acct.new.locked')} />}
+          </span>
+        </div>
+      )}
       <div className="cn-field" style={{ flex: '0 1 230px' }}>
         <label htmlFor="cn-model">{t('panels.newJob.model')}</label>
         <select id="cn-model" className="cc-sel" value={model} onChange={(e) => f.setModel(e.target.value)}>

@@ -9,6 +9,8 @@ import { useT } from '../i18n';
 import { statusWord } from './canvasLayout';
 import { CloseIcon, PinIcon } from './icons';
 import { PaneView } from './PaneView';
+import { AccountChip } from '../components/AccountChip';
+import { isLocalJob } from '../accountJobLogic';
 import type { PaneSource } from './paneStore';
 
 export const DRAWER_MIN_W = 320;
@@ -107,6 +109,11 @@ export function PaneDrawer(p: PaneDrawerProps) {
         <span className="cv-pane-dot" style={{ background: status ? STATUS_VAR[status] : 'var(--idle)' }} aria-hidden="true" />
         <span className="cv-pane-name">{name}</span>
         <span className="cv-pane-sub">{limit ?? (agent ? `subagent · ${agent.description}` : session ? statusWord(session.status) : '')}</span>
+        {session && isLocalJob(session, p.runner) && (
+          <span className="cv-drawer-acct">
+            <AccountChip sessionId={session.sessionId} runner={p.runner} />
+          </span>
+        )}
         <button type="button" className="cv-drawer-pin" onClick={p.onPin} disabled={!session} title={t('canvas.drawer.pinHint')}>
           <PinIcon />
           {t('canvas.drawer.pin')}

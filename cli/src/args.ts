@@ -4,7 +4,7 @@ import type { EffortLevel } from '../../shared/protocol.ts';
 
 export type Command =
   | { kind: 'ls'; all: boolean }
-  | { kind: 'new'; cwd: string; model: string; effort: EffortLevel; prompt: string; attach: boolean }
+  | { kind: 'new'; cwd: string; model: string; effort: EffortLevel; prompt: string; attach: boolean; account?: string }
   | { kind: 'attach'; id: string }
   | { kind: 'resume'; id: string; model?: string; effort?: EffortLevel }
   | { kind: 'takeover'; id: string; yes: boolean }
@@ -15,6 +15,8 @@ export interface Parsed {
   ok: true;
   port: number;
   machine?: string; // passthrough hook for remote machines: added to start / saved_resume as `machineId`
+  /** --pin-stdin (alias --password-stdin): the app PIN (when the app is locked) is the first line of stdin */
+  pinStdin: boolean;
   command: Command;
 }
 export type ParseResult = Parsed | { ok: false; error: string };
@@ -22,8 +24,9 @@ export type ParseResult = Parsed | { ok: false; error: string };
 export const USAGE = `cr — คุมงาน Claude Control Room จาก terminal
 
   cr [ls] [--all]                       รายการงาน (งานจากเว็บ + session ใน terminal)
-  cr new [--cwd DIR] [--model M] [--effort E] ["prompt"]
+  cr new [--cwd DIR] [--model M] [--effort E] [--account ID] ["prompt"]
                                         เริ่มงานใหม่ แล้วต่อเข้าไปดู (--no-attach = ไม่ต่อ)
+                                        --account = โปรไฟล์ที่ใช้รัน (id หรือชื่อ; ไม่ใส่ = ค่าตั้งต้นของเซิร์ฟเวอร์)
   cr attach <id>                        ต่อเข้างานที่เปิดอยู่ (พิมพ์ข้อความ = ส่งเข้างาน)
   cr resume <sessionId>                 เอา session เก่ามาเป็นงานที่คุมได้ทั้งเว็บและ terminal แล้วต่อ
   cr takeover <id> [-y]                 ยึด session ที่เปิดอยู่ใน terminal: ปิด claude ตัวนั้น (ต้องว่าง) แล้วย้ายมาคุม (ถามยืนยัน, -y = ไม่ถาม) แล้วต่อ
@@ -31,6 +34,7 @@ export const USAGE = `cr — คุมงาน Claude Control Room จาก te
                                         อัปเดตเซิร์ฟเวอร์เป็น release tag (ใช้ได้เฉพาะการติดตั้งที่มี .cr-install; ไม่ต้องเปิดเซิร์ฟเวอร์)
 
   id ใช้แค่ตัวหน้า ๆ ได้ (อย่างน้อย 4 ตัว)   --port N หรือ CR_PORT = พอร์ตของเซิร์ฟเวอร์ (ค่าตั้งต้น ${SERVER_PORT})
+  --pin-stdin = เซิร์ฟเวอร์ล็อกอยู่: อ่าน PIN 6 หลักจากบรรทัดแรกของ stdin (ไม่มีวันเก็บลงดิสก์)
   ในโหมด attach: เลข = ตอบคำถาม · /stop หยุดงาน · /close ปิดงาน · /detach หรือ Ctrl+C ออกโดยงานยังรันต่อ · /help`;
 
 const MODEL_IDS = MODEL_OPTIONS.filter((m) => m.cli && !m.disabled).map((m) => m.id);
@@ -47,8 +51,8 @@ interface Flags {
   rest: string[];
 }
 
-const VALUE_FLAGS = new Set(['--cwd', '--model', '--effort', '--port', '--machine', '--tag']);
-const BOOL_FLAGS = new Set(['--all', '-a', '--no-attach', '--help', '-h', '--yes', '-y', '--latest', '--skills', '--dry-run']);
+const VALUE_FLAGS = new Set(['--cwd', '--model', '--effort', '--port', '--machine', '--tag', '--account']);
+const BOOL_FLAGS = new Set(['--all', '-a', '--no-attach', '--help', '-h', '--yes', '-y', '--latest', '--skills', '--dry-run', '--pin-stdin', '--password-stdin']);
 
 function splitFlags(args: string[]): Flags | string {
   const f: Flags = { values: new Map(), bools: new Set(), rest: [] };
@@ -89,7 +93,8 @@ export function parseArgs(argv: string[], cwd: string, env: Record<string, strin
   }
   const machine = f.values.get('--machine') ?? (env.CR_MACHINE || undefined);
   if (machine !== undefined && !/^[A-Za-z0-9_-]{1,100}$/.test(machine)) return { ok: false, error: `machine id ไม่ถูกต้อง: ${machine}` };
-  const wrap = (command: Command): Parsed => ({ ok: true, port, ...(machine ? { machine } : {}), command });
+  const pinStdin = f.bools.has('--pin-stdin') || f.bools.has('--password-stdin');
+  const wrap = (command: Command): Parsed => ({ ok: true, port, ...(machine ? { machine } : {}), pinStdin, command });
 
   if (f.bools.has('--help') || f.bools.has('-h')) return wrap({ kind: 'help' });
   const [verb, ...args] = f.rest;
@@ -143,6 +148,7 @@ export function parseArgs(argv: string[], cwd: string, env: Record<string, strin
         effort: effort as EffortLevel,
         prompt: args.join(' ').trim(),
         attach: !f.bools.has('--no-attach'),
+        ...(f.values.has('--account') ? { account: f.values.get('--account') } : {}),
       });
     }
     default:

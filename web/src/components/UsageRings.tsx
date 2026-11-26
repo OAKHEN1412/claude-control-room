@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import type { RunnerState, SessionInfo } from '../../../shared/protocol';
 import { type UsageSnapshot, levelOf } from '../../../shared/usage';
-import { type RingView, contextRing, liveSessionIds, pickContext, quotaRing } from '../usageView';
+import { type RingView, awaitingProfileUsage, contextRing, effectiveUsage, liveSessionIds, pickContext, profileLabel, quotaRing, withProfile } from '../usageView';
+import { useAccounts } from '../accountsContext';
 import { useT } from '../i18n';
 import './usage.css';
 
@@ -58,18 +59,23 @@ function Ring({ view, open, onOpen, children }: { view: RingView; open: boolean;
   );
 }
 
-export function UsageRings({ usage, sessions, runners, selectedSessionId, now }: UsageRingsProps) {
+export function UsageRings({ usage: globalUsage, sessions, runners, selectedSessionId, now }: UsageRingsProps) {
   const t = useT();
+  const { accounts, defaultAccountId } = useAccounts();
   const [open, setOpen] = useState<string | null>(null);
+  // The quota rings follow the header profile; the context ring keeps the global session data.
+  const usage = effectiveUsage(globalUsage, defaultAccountId, accounts);
+  const fetching = awaitingProfileUsage(defaultAccountId, accounts);
+  const label = profileLabel(defaultAccountId, accounts);
   const nameOf = (id: string) => {
     const s = sessions.find((x) => x.sessionId === id);
     return s ? s.title || s.name || id.slice(0, 8) : id.slice(0, 8);
   };
   const live = liveSessionIds(sessions, runners);
-  const { session, rows } = pickContext(usage, selectedSessionId, live);
+  const { session, rows } = pickContext(globalUsage, selectedSessionId, live);
   const followed = session !== null && session.sessionId === selectedSessionId;
-  const five = quotaRing('five', usage.fiveHour, now);
-  const week = quotaRing('week', usage.sevenDay, now);
+  const five = withProfile(quotaRing('five', usage.fiveHour, now), label, fetching);
+  const week = withProfile(quotaRing('week', usage.sevenDay, now), label, fetching);
   const ctx = contextRing(session, followed, now, nameOf);
   const bind = (k: string) => (o: boolean) => setOpen((cur) => (o ? k : cur === k ? null : cur));
   return (

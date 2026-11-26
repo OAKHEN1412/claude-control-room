@@ -1,0 +1,158 @@
+/* Add-profile dialog and shared avatar. Prefix acct-. Modal shell, fields and buttons reuse setup-* and cc-* classes. */
+
+.acct-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border-radius: 50%;
+  font-family: var(--font-ui);
+  font-weight: 700;
+  line-height: 1;
+  user-select: none;
+  overflow: hidden;
+}
+
+.acct-dlg-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.acct-dlg-preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.acct-dlg-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.acct-dlg-swatch {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+
+.acct-dlg-swatch.is-on {
+  border-color: var(--text);
+  box-shadow: inset 0 0 0 2px var(--panel);
+}
+
+.acct-dlg-swatch:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+.acct-dlg-field .cc-input {
+  width: 100%;
+  min-height: 44px;
+}
+
+.acct-dlg-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+}
+
+.acct-dlg-foot .cc-btn {
+  min-height: 44px;
+}
+
+.acct-dlg-status {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.acct-dlg-status p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.acct-dlg-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.acct-dlg-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--done);
+  color: #000;
+  font-size: 12px;
+  font-weight: 700;
+  flex: none;
+}
+
+.acct-dlg-paste {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 12px;
+}
+
+.acct-dlg-paste > summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  color: var(--text-2);
+  font-size: 14px;
+}
+
+.acct-dlg-paste-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 0 12px;
+}
+
+.acct-dlg-paste-body .cc-input {
+  width: 100%;
+  min-height: 44px;
+}
+
+.acct-dlg-link {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text);
+  word-break: break-all;
+}
+
+@media (max-width: 480px) {
+  .acct-dlg-foot .cc-btn {
+    flex: 1 1 120px;
+  }
+}
+
+/* Inputs in the add-profile dialog sit in flex-column fields; the shared .cc-input basis must not become a height. */
+.acct-dlg-body .cc-input,
+.acct-dlg-paste-body .cc-input {
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  box-sizing: border-box;
+}

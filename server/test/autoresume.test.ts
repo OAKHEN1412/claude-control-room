@@ -6,6 +6,7 @@ import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AUTORESUME_MAX, AutoResume, RESUME_FAIL_MS, resumeMode } from '../src/autoresume';
+import type { AccountPort } from '../src/accountPort';
 import { WorklogDb } from '../src/db';
 import { Runner, type ChildLike } from '../src/runner';
 
@@ -174,5 +175,51 @@ describe('AutoResume', () => {
     expect(db.listRunnerJobs()).toHaveLength(1); // still listed for a while
     runner.emit('removed', id);
     expect(db.listRunnerJobs()).toHaveLength(0);
+  });
+});
+
+describe('AutoResume with a locked account', () => {
+  const tokenPort = (locked: Set<string>): AccountPort => ({
+    defaultId: () => 'work',
+    exists: () => true,
+    nameOf: (id) => id,
+    tokenFor: () => 'test-token-value',
+    isLocked: (id) => locked.has(id),
+    sessionAccount: () => null,
+    rememberSession: () => {},
+  });
+
+  it('a job waiting for its locked profile keeps its row, is not logged as a failed resume, and resumes after the unlock', () => {
+    const locked = new Set<string>();
+    const spawned: string[][] = [];
+    const spawn = (_cmd: string, args: string[]) => {
+      const c = new FakeChild();
+      children.push(c);
+      spawned.push(args);
+      return c;
+    };
+    // first server process: the job runs as 'work' (not locked yet)
+    const first = new Runner({ allowedCwds: () => [tmp], spawn, accounts: tokenPort(locked) });
+    new AutoResume({ db, runner: first }).start();
+    const id = first.start({ cwd: tmp, model: 'haiku', effort: 'low', prompt: 'a', accountId: 'work' });
+
+    // second process: 'work' is locked when the job is restored
+    locked.add('work');
+    const logs: string[] = [];
+    const second = new Runner({ allowedCwds: () => [tmp], spawn, accounts: tokenPort(locked) });
+    const ar = new AutoResume({ db, runner: second, log: (m) => logs.push(m) });
+    ar.start();
+    expect(ar.restore()).toBe(0);
+    expect(spawned).toHaveLength(1); // only the first process spawned a child
+    expect(second.states()[0]).toMatchObject({ sessionId: id, alive: false, waitingUnlock: 'work' });
+    expect(db.listRunnerJobs().map((r) => r.sessionId)).toEqual([id]);
+    expect(logs.join('\n')).not.toContain('did not come back');
+
+    // unlocked: the job is launched with --resume, its row is still there
+    locked.delete('work');
+    expect(second.resumeWaiting('work')).toBe(1);
+    expect(spawned[spawned.length - 1]).toEqual(expect.arrayContaining(['--resume', id]));
+    expect(second.isAlive(id)).toBe(true);
+    expect(db.listRunnerJobs().map((r) => r.sessionId)).toEqual([id]);
   });
 });

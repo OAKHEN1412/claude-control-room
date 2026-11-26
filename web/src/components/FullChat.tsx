@@ -48,7 +48,7 @@ export function FullChat({ session, runner, command, onClose }: FullChatProps) {
       </div>
       <div className="cf-body is-term" ref={ref}>
         <div className="cf-col">
-          <TerminalLog events={session.timeline} thought={session.thought} />
+          <TerminalLog events={session.timeline} thought={session.thought} accountLog={runner?.accountLog} />
         </div>
       </div>
       <div className="cf-pend">

@@ -11,7 +11,7 @@
 // under it by the layout); tool and error lines are always one line.
 import type { TimelineEvent } from '../../shared/protocol';
 
-export type TermKind = 'user' | 'assistant' | 'tool' | 'error' | 'thought';
+export type TermKind = 'user' | 'assistant' | 'tool' | 'error' | 'thought' | 'switch';
 
 export interface TermLine {
   key: string;
@@ -101,6 +101,71 @@ export function formatTimeline(events: ReadonlyArray<TimelineEvent>): TermLine[]
       }
     }
   });
+  return out;
+}
+
+/** One account switch of a session (RunnerState.accountLog entry; from/to are profile names). */
+export interface AccountSwitch {
+  at: number;
+  from: string;
+  to: string;
+}
+
+/** Names the server stores for the built-in profile, before translation (English). */
+const BUILTIN_SWITCH_NAMES = ['Main account', 'Terminal login'];
+
+/**
+ * A switch's profile name for the divider. The server stores the built-in profile by its English display name;
+ * that name is replaced by `terminalName` (the translated built-in label). Other names pass through unchanged.
+ */
+export function switchName(name: string, terminalName: string): string {
+  return BUILTIN_SWITCH_NAMES.includes(name) ? terminalName : name;
+}
+
+/** Local time as HH:MM, 24 h. */
+export function hhmm(ts: number): string {
+  const d = new Date(ts);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/**
+ * Merges one divider line per account switch into the timeline, in time order by `at`. A switch goes before
+ * the first line stamped later than it. Repeats (same at, from, to) are shown once. No log: lines unchanged.
+ * `label` builds the divider text from the switch and its HH:MM time.
+ */
+export function mergeAccountSwitches(
+  lines: TermLine[],
+  log: ReadonlyArray<AccountSwitch> | undefined,
+  label: (sw: AccountSwitch, time: string) => string,
+): TermLine[] {
+  if (!log || log.length === 0) return lines;
+  const seen = new Set<string>();
+  const switches = [...log]
+    .sort((a, b) => a.at - b.at)
+    .filter((sw) => {
+      const k = `${sw.at}|${sw.from}|${sw.to}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  const divider = (sw: AccountSwitch, i: number): TermLine => {
+    const text = label(sw, hhmm(sw.at));
+    return { key: `sw:${sw.at}:${i}`, kind: 'switch', mark: '', text, full: text, nested: false, collapsible: false, ts: sw.at, rows: 1 };
+  };
+  const out: TermLine[] = [];
+  let next = 0;
+  for (const l of lines) {
+    while (next < switches.length && l.ts !== null && switches[next].at < l.ts) {
+      out.push(divider(switches[next], next));
+      next++;
+    }
+    out.push(l);
+  }
+  while (next < switches.length) {
+    out.push(divider(switches[next], next));
+    next++;
+  }
   return out;
 }
 

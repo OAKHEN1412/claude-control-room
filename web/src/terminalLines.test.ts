@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TimelineEvent } from '../../shared/protocol';
-import { MAX_ARGS, MAX_RESULT, formatTimeline, keepLines, splitTool, thoughtLine, toolCall } from './terminalLines';
+import { MAX_ARGS, MAX_RESULT, formatTimeline, hhmm, keepLines, mergeAccountSwitches, splitTool, switchName, thoughtLine, toolCall, type AccountSwitch } from './terminalLines';
 
 const ev = (kind: TimelineEvent['kind'], text: string, ts = 1): TimelineEvent => ({ ts, kind, text });
 
@@ -119,5 +119,63 @@ describe('thoughtLine', () => {
   it('makes a ✻ line, or nothing when empty', () => {
     expect(thoughtLine('  กำลังคิด ')).toMatchObject({ kind: 'thought', mark: '✻', text: 'กำลังคิด' });
     expect(thoughtLine('   ')).toBeNull();
+  });
+});
+
+describe('mergeAccountSwitches', () => {
+  const label = (sw: AccountSwitch, time: string) => `— สลับบัญชี ${sw.from} → ${sw.to} ${time} —`;
+  const at = (h: number, m: number) => new Date(2026, 10, 26, h, m, 0).getTime();
+  const lines = () => formatTimeline([ev('user', 'a', at(9, 0)), ev('text', 'b', at(9, 30)), ev('tool', 'Read: x', at(10, 0))]);
+
+  it('returns the same lines when there is no log or an empty one', () => {
+    const base = lines();
+    expect(mergeAccountSwitches(base, undefined, label)).toBe(base);
+    expect(mergeAccountSwitches(base, [], label)).toBe(base);
+  });
+
+  it('places each divider in time order among the lines, whatever the log order', () => {
+    const log = [
+      { at: at(10, 15), from: 'งาน', to: 'ทดสอบ' },
+      { at: at(9, 15), from: 'ล็อกอินเทอร์มินัล', to: 'งาน' },
+    ];
+    const out = mergeAccountSwitches(lines(), log, label);
+    expect(out.map((l) => l.kind)).toEqual(['user', 'switch', 'assistant', 'tool', 'switch']);
+    expect(out[1].text).toBe('— สลับบัญชี ล็อกอินเทอร์มินัล → งาน 09:15 —');
+    expect(out[4].text).toBe('— สลับบัญชี งาน → ทดสอบ 10:15 —');
+  });
+
+  it('shows a repeated switch once', () => {
+    const sw = { at: at(9, 15), from: 'a', to: 'b' };
+    const out = mergeAccountSwitches(lines(), [sw, { ...sw }], label);
+    expect(out.filter((l) => l.kind === 'switch')).toHaveLength(1);
+  });
+
+  it('keeps the switch after a line stamped at the same time, and at the end when later', () => {
+    const same = mergeAccountSwitches(formatTimeline([ev('user', 'a', at(9, 0))]), [{ at: at(9, 0), from: 'a', to: 'b' }], label);
+    expect(same.map((l) => l.kind)).toEqual(['user', 'switch']);
+    const late = mergeAccountSwitches(lines(), [{ at: at(12, 0), from: 'a', to: 'b' }], label);
+    expect(late[late.length - 1].kind).toBe('switch');
+  });
+
+  it('formats HH:MM in 24 h', () => {
+    expect(hhmm(at(13, 7))).toBe('13:07');
+    expect(hhmm(at(0, 5))).toBe('00:05');
+  });
+});
+
+describe('switchName (built-in profile in the switch divider)', () => {
+  it('replaces the stored English built-in names with the translated Main account label', () => {
+    expect(switchName('Main account', 'บัญชีหลัก')).toBe('บัญชีหลัก');
+    expect(switchName('Terminal login', 'บัญชีหลัก')).toBe('บัญชีหลัก');
+  });
+
+  it('leaves other profile names unchanged', () => {
+    expect(switchName('Work', 'บัญชีหลัก')).toBe('Work');
+  });
+
+  it('builds the divider text with the translated name', () => {
+    const log: AccountSwitch[] = [{ at: 1_800_000_000_000, from: 'Main account', to: 'OAK' }];
+    const lines = mergeAccountSwitches([], log, (sw, time) => `— ${switchName(sw.from, 'บัญชีหลัก')} → ${switchName(sw.to, 'บัญชีหลัก')} ${time} —`);
+    expect(lines[0]!.text).toMatch(/^— บัญชีหลัก → OAK \d{2}:\d{2} —$/);
   });
 });

@@ -207,6 +207,20 @@
 .cv-linkto { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid var(--line); }
 .cv-linkto .cp-select { min-height: 36px; width: 100%; }
 
+/* Account (profile) bits: avatar on a card, waiting caption, the popover row, and the chip in pane headers. */
+.cv-acct { display: inline-flex; vertical-align: middle; margin-right: 5px; line-height: 0; }
+.cv-acct-wait { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cv-acctrow { display: flex; flex-direction: column; gap: 6px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.cv-acctrow-label { font-size: 12px; color: var(--muted); }
+.cv-acctrow .cp-select { min-height: 36px; width: 100%; }
+.cv-pane-acct,
+.cv-drawer-acct { flex: none; min-width: 0; max-width: 45%; display: inline-flex; }
+.cv-pane-acct .acct-job-chip,
+.cv-drawer-acct .acct-job-chip { max-width: 100%; }
+/* The pane title bar clips overflow; let the chip's dropdown open over the pane body. */
+.cv-pane-title:has(.cv-pane-acct) { overflow: visible; }
+.cv-pane-acct .acct-job-menu { z-index: 30; }
+
 @media (prefers-reduced-motion: reduce) {
   .cv-link-wire.is-pulse,
   .cv-chip.is-pulse { animation: none !important; }

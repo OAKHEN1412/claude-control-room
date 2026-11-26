@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-26
+
+- Account profiles: run each job on a named Claude account (one long-lived `claude setup-token` token per profile), Google-style switcher in the header, per-job account chip, switch a running job and keep the conversation
+- Tokens stored with Windows DPAPI, injected only into that job's process; per-profile usage rings and limit badges
+- Main account: sign in to Claude Code from the web UI on first use (`claude auth login` in a pty), with email, plan and expiry on the manage page
+- Optional profile passwords (AES-256-GCM, scrypt key); a locked profile asks for its password before use
+- Optional 6-digit app PIN for the web UI and API (HttpOnly session cookie, escalating lockout); `cr --pin-stdin` for the CLI
+- Manage page `/accounts`: add, rename, recolour, replace token, check, hide, delete, default profile
+- `cr new --account <id|name>`
+
 ## [0.2.0] - 2026-11-25
 
 - cli test: default effort is medium

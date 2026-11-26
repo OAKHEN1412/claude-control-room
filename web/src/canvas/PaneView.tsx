@@ -7,6 +7,8 @@ import { useAgentTimeline } from '../agentTimeline';
 import { Compose, ModelEffort, PendingList, QuickPanel, useCommand, useJobButtons, type Command } from '../components/Controls';
 import { StatusChip, cwdTail } from '../components/SessionPane';
 import { shortModel } from '../components/graphLayout';
+import { isLocalJob } from '../accountJobLogic';
+import { AccountRow } from './AccountRow';
 import { useT } from '../i18n';
 import { TerminalLog } from '../components/TerminalLog';
 import { BoltIcon, ExpandIcon, LinkIcon, PowerIcon, SlidersIcon, StopIcon, TakeoverIcon, TerminalIcon } from './icons';
@@ -222,7 +224,7 @@ export function PaneView({ source, session, sessions, runner, command, active, o
                 <div className="cc-muted">{t('canvas.paneView.logUnavailable')}</div>
               </div>
             ) : (
-              <TerminalLog events={events} thought={thought} emptyText={agentMode && tl.loading ? t('canvas.paneView.loadingLog') : undefined} />
+              <TerminalLog events={events} thought={thought} accountLog={agentMode ? undefined : runner?.accountLog} emptyText={agentMode && tl.loading ? t('canvas.paneView.loadingLog') : undefined} />
             )}
           </div>
         ) : (
@@ -306,6 +308,7 @@ export function PaneView({ source, session, sessions, runner, command, active, o
           {panel === 'model' && session && command && (
             <>
               <div className="cv-fly-title">{t('canvas.paneView.modelAndMode')}</div>
+              {isLocalJob(session, runner) && <AccountRow sessionId={session.sessionId} runner={runner} />}
               <ModelEffort session={session} runner={runner} command={command} />
             </>
           )}

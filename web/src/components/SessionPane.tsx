@@ -3,6 +3,10 @@ import type { AgentInfo, RunnerState, SessionInfo } from '../../../shared/protoc
 import { Compose, ModelEffort, PendingList, type Command } from './Controls';
 import { STATUS_VAR, STATUS_WORD, badgeText } from './graphLayout';
 import { TerminalLog } from './TerminalLog';
+import { AccountChip } from './AccountChip';
+import { LimitSwitchCard } from './LimitSwitchCard';
+import { isLocalJob } from '../accountJobLogic';
+import { limitOf, limitText } from '../limit';
 import { useT } from '../i18n';
 import './pane.css';
 
@@ -94,6 +98,11 @@ export function SessionPane({
     stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < STICK_PX;
   };
 
+  // Account chip and limit card only for jobs this web controls (no remote machine).
+  const localJob = isLocalJob(session, runner);
+  const limit = limitOf(session, runner);
+  const limitLabel = limit ? limitText(session, runner) : null;
+
   const agent =
     session && selectedAgentId
       ? (session.subagents.find((a) => a.id === selectedAgentId) ?? null)
@@ -135,6 +144,8 @@ export function SessionPane({
                 {session.title}
               </span>
             </div>
+            {localJob && <AccountChip sessionId={session.sessionId} runner={runner} />}
+            {localJob && limit && limitLabel && <LimitSwitchCard sessionId={session.sessionId} runner={runner} label={limitLabel} />}
           </>
         )}
         {session && command && <ModelEffort session={session} runner={runner} command={command} />}
@@ -156,7 +167,7 @@ export function SessionPane({
         >
           {agent && <AgentCard agent={agent} onClose={() => onSelectAgent(null)} />}
 
-          <TerminalLog events={events} thought={session.thought} />
+          <TerminalLog events={events} thought={session.thought} accountLog={runner?.accountLog} />
         </div>
       ) : (
         <div className="cp-scroll cp-empty-wrap">

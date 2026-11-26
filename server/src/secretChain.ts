@@ -1,4 +1,4 @@
-// Secret provider chain: where the server finds its keys (the ElevenLabs key and per-machine agent tokens).
+// Secret provider chain: where the server finds its keys (the ElevenLabs key, per-machine agent tokens and account tokens).
 //
 // Default order (createDefaultChain): env -> DPAPI store (this Windows user only) -> secrets vault CLI (last).
 // The vault CLI stays last so the owner's machine keeps working as before.
@@ -27,14 +27,33 @@ const STORE_FILE = 'secrets.dpapi.json';
 const NEGATIVE_TTL_MS = 60_000;
 const POWERSHELL_TIMEOUT_MS = 15_000;
 
-type KeyRef = { kind: 'elevenlabs' } | { kind: 'agent'; id: string };
+type KeyRef = { kind: 'elevenlabs' } | { kind: 'agent'; id: string } | { kind: 'account'; id: string };
+
+// Claude OAuth token of an accounts profile (`claude setup-token` output): sk-ant-oat01-...
+const ACCOUNT_TOKEN_RE = /^sk-ant-oat01-[A-Za-z0-9_-]{60,200}$/;
 
 /** Maps a logical key name to what it is. Null for anything invalid. */
 export function parseLogicalKey(key: unknown): KeyRef | null {
   if (key === 'elevenlabs') return { kind: 'elevenlabs' };
-  if (typeof key !== 'string' || !key.startsWith('agent:')) return null;
-  const id = key.slice('agent:'.length);
-  return MACHINE_RE.test(id) ? { kind: 'agent', id } : null;
+  if (typeof key !== 'string') return null;
+  if (key.startsWith('agent:')) {
+    const id = key.slice('agent:'.length);
+    return MACHINE_RE.test(id) ? { kind: 'agent', id } : null;
+  }
+  if (key.startsWith('account:')) {
+    const id = key.slice('account:'.length);
+    return MACHINE_RE.test(id) ? { kind: 'account', id } : null;
+  }
+  return null;
+}
+
+/** Parser for a vault entry holding one account token. Returns the token only when it has the exact shape, else null. */
+export function parseAccountToken(output: string): string | null {
+  for (const line of output.split('\n')) {
+    const t = line.trim();
+    if (ACCOUNT_TOKEN_RE.test(t)) return t;
+  }
+  return null;
 }
 
 /** Env var that holds an agent token: CR_AGENT_TOKEN_<ID upper-cased, '-' -> '_'>. */
@@ -47,13 +66,13 @@ function clean(v: string | undefined): string | null {
   return t === '' ? null : t;
 }
 
-/** Environment variables: ELEVENLABS_API_KEY and CR_AGENT_TOKEN_<ID>. */
+/** Environment variables: ELEVENLABS_API_KEY and CR_AGENT_TOKEN_<ID>. Account tokens are never read from the environment. */
 export function envProvider(env: NodeJS.ProcessEnv = process.env): SecretProvider {
   return {
     name: 'env',
     async get(key) {
       const ref = parseLogicalKey(key);
-      if (!ref) return null;
+      if (!ref || ref.kind === 'account') return null;
       return clean(ref.kind === 'elevenlabs' ? env.ELEVENLABS_API_KEY : env[agentEnvName(ref.id)]);
     },
   };
@@ -216,7 +235,7 @@ export interface SecretsCliOptions {
   available?: () => boolean;
 }
 
-/** The secrets vault CLI, last in the chain. Never throws: any failure is null. */
+/** The secrets vault CLI, last in the chain. Never throws: any failure is null. Read only. */
 export function secretsCliProvider(opts: SecretsCliOptions = {}): SecretProvider {
   const read = opts.read ?? readKeyFromVault;
   const available = opts.available ?? secretsCliAvailable;
@@ -230,7 +249,9 @@ export function secretsCliProvider(opts: SecretsCliOptions = {}): SecretProvider
         const v =
           ref.kind === 'elevenlabs'
             ? await read(VAULT_ENTRY, parseKey)
-            : await read(`tools/cr-agent-${ref.id}.enc`, parseAgentToken);
+            : ref.kind === 'account'
+              ? await read(`tools/cr-account-${ref.id}.enc`, parseAccountToken)
+              : await read(`tools/cr-agent-${ref.id}.enc`, parseAgentToken);
         return v && v !== '' ? v : null;
       } catch {
         return null;

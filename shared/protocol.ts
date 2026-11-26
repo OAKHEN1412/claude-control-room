@@ -1,6 +1,7 @@
 // Wire protocol (WebSocket, JSON text frames). Server -> browser: watcher view + Runner state.
 // Browser -> server: stage 2 commands (validated in server/src/commands.ts).
 import type { UsageSnapshot } from './usage';
+import type { AccountInfo, ConnectEvent, MainLoginEvent } from './accounts';
 
 export type Status = 'running' | 'waiting' | 'idle' | 'done' | 'unreadable';
 
@@ -181,6 +182,10 @@ export interface RunnerState {
   error?: string;
   startedAt: number;
   machineId?: string; // remote agent: the machine this job runs on; absent = this PC
+  accountId?: string; // profile the child runs as (see shared/accounts.ts)
+  accountPending?: string; // profile id of a switch waiting for the turn to end
+  accountLog?: { at: number; from: string; to: string }[]; // last 20 switches; from/to = profile NAMES at that time
+  waitingUnlock?: string; // profile id this job waits for (a locked token profile); such a state has alive:false
 }
 
 // ---- Stage 4: worklog + summary assistant ----
@@ -408,6 +413,7 @@ export type ClientMsg =
       remoteControl?: boolean;
       confirm?: boolean; // required when permissionMode is bypassPermissions
       attachments?: string[]; // upload ids from POST /api/upload (<= 10), see shared/uploads.ts
+      accountId?: string; // profile to run as; absent = the session's / default profile
     }
   | { type: 'send'; reqId: string; sessionId: string; text: string; attachments?: string[] } // text may be '' when attachments is given
   | { type: 'stop'; reqId: string; sessionId: string }
@@ -415,6 +421,7 @@ export type ClientMsg =
   | { type: 'close'; reqId: string; sessionId: string } // end a Runner job now (stdin closed, then killed)
   | { type: 'open_terminal'; reqId: string; sessionId: string } // open a Windows Terminal window running `cr attach <id>` (live Runner job only)
   | { type: 'set_model'; reqId: string; sessionId: string; model: string }
+  | { type: 'set_account'; reqId: string; sessionId: string; accountId: string }
   | { type: 'set_effort'; reqId: string; sessionId: string; effort: EffortLevel }
   | { type: 'set_permission_mode'; reqId: string; sessionId: string; mode: PermissionMode; confirm?: boolean }
   | { type: 'set_remote_control'; reqId: string; sessionId: string; on: boolean }
@@ -462,7 +469,10 @@ export type ClientMsg =
   | { type: 'machine_detach'; reqId: string; sessionId: string; machineId: string };
 
 export type ServerMsg =
-  | { type: 'snapshot'; machine: string; serverTime: number; sessions: SessionInfo[]; runners?: RunnerState[]; cwds?: string[]; links?: LinkInfo[]; saved?: SavedSession[]; machines?: MachineInfo[]; attachments?: MachineAttachment[]; peers?: TailscalePeer[]; usage?: UsageSnapshot }
+  | { type: 'snapshot'; machine: string; serverTime: number; sessions: SessionInfo[]; runners?: RunnerState[]; cwds?: string[]; links?: LinkInfo[]; saved?: SavedSession[]; machines?: MachineInfo[]; attachments?: MachineAttachment[]; peers?: TailscalePeer[]; usage?: UsageSnapshot; accounts?: AccountInfo[]; defaultAccountId?: string; ptyAvailable?: boolean }
+  | { type: 'accounts'; serverTime: number; accounts: AccountInfo[]; defaultId: string; ptyAvailable: boolean }
+  | { type: 'account_connect'; serverTime: number; event: ConnectEvent }
+  | { type: 'main_login'; serverTime: number; event: MainLoginEvent }
   | { type: 'usage'; serverTime: number; usage: UsageSnapshot } // 5 h / weekly quota + per-session context; broadcast on change
   | { type: 'runner'; serverTime: number; runner: RunnerState }
   | { type: 'runner_removed'; serverTime: number; sessionId: string; machineId?: string }
@@ -478,6 +488,9 @@ export type ServerMsg =
   | { type: 'ping'; serverTime: number };
 
 export const SERVER_PORT = 8790;
+
+/** ws close code the server uses when the app lock refuses a socket (accept, then close with this code). */
+export const APP_LOCK_CLOSE_CODE = 4401;
 
 // ---- Remote agent (another PC's Claude sessions, seen through an SSH tunnel) ----
 

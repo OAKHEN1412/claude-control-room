@@ -8,6 +8,7 @@ import {
   createDefaultChain,
   dpapiProvider,
   envProvider,
+  parseAccountToken,
   parseLogicalKey,
   secretsCliProvider,
   type SecretProvider,
@@ -15,6 +16,8 @@ import {
 
 const FAKE_KEY = 'sk_test_0000000000000000';
 const AGENT_TOKEN = 'tok_test_0000000000000000000000000000';
+// Fake OAuth-token shape (sk-ant-oat01- + 80 url-safe chars). Not a real credential.
+const ACCOUNT_TOKEN = 'sk-ant-oat01-' + 'A1b2_C3d4-'.repeat(8);
 
 const roots: string[] = [];
 function tmpDir(): string {
@@ -411,6 +414,90 @@ describe('createDefaultChain', () => {
       read: async (entry) => (entry === 'tools/elevenlabs.enc' ? 'sk_test_cli_0000000000000000' : null),
     });
     expect(await noEnv.sourceOf('elevenlabs')).toBe('secrets-cli');
+  });
+});
+
+describe('account keys (account:<id>)', () => {
+  const goodIds = ['x', 'acc-1', 'a'.repeat(64)];
+  const badIds = ['account:', 'account:Bad_ID', 'account:Upper', 'account:a b', 'account:' + 'a'.repeat(65), 'account:../x', 'account:x\n'];
+
+  it('parseLogicalKey accepts account:<id> with the machine id rule', () => {
+    for (const id of goodIds) expect(parseLogicalKey(`account:${id}`)).toEqual({ kind: 'account', id });
+    for (const k of badIds) expect(parseLogicalKey(k)).toBeNull();
+  });
+
+  it('envProvider never answers for an account key, even when a matching env var is set', async () => {
+    const env = { ELEVENLABS_API_KEY: FAKE_KEY, CR_AGENT_TOKEN_X: AGENT_TOKEN };
+    const p = envProvider(env);
+    expect(await p.get('account:x')).toBeNull();
+    expect(await p.get('elevenlabs')).toBe(FAKE_KEY);
+  });
+
+  it('parseAccountToken returns the trimmed token only for the exact shape', () => {
+    expect(parseAccountToken(`noise\n  ${ACCOUNT_TOKEN}  \n`)).toBe(ACCOUNT_TOKEN);
+    expect(parseAccountToken('sk-ant-oat01-short')).toBeNull();
+    expect(parseAccountToken(AGENT_TOKEN)).toBeNull();
+    expect(parseAccountToken(`${ACCOUNT_TOKEN}!`)).toBeNull();
+    expect(parseAccountToken(`sk-ant-oat01-${'a'.repeat(201)}`)).toBeNull();
+    expect(parseAccountToken('')).toBeNull();
+  });
+
+  it('secrets-cli reads tools/cr-account-<id>.enc through read(entry, parse) and accepts only a token', async () => {
+    const seen: string[] = [];
+    const p = secretsCliProvider({
+      available: () => true,
+      read: async (entry, parse) => {
+        seen.push(entry);
+        return parse(entry === 'tools/cr-account-x.enc' ? `${ACCOUNT_TOKEN}\n` : 'not a token\n');
+      },
+    });
+    expect(await p.get('account:x')).toBe(ACCOUNT_TOKEN);
+    expect(seen).toEqual(['tools/cr-account-x.enc']);
+    expect(await p.get('account:other')).toBeNull();
+  });
+
+  it('secrets-cli rejects a non-token value from the vault (parser returns null)', async () => {
+    const p = secretsCliProvider({
+      available: () => true,
+      read: async (_entry, parse) => parse(AGENT_TOKEN),
+    });
+    expect(await p.get('account:x')).toBeNull();
+  });
+
+  it('dpapi set/get/clear round-trips an account key with a fake exec; the file holds no plaintext token', async () => {
+    const dir = tmpDir();
+    const calls: { script: string; stdin: string }[] = [];
+    const exec = async (script: string, stdin: string): Promise<string> => {
+      calls.push({ script, stdin });
+      if (script.includes('Unprotect')) {
+        const raw = Buffer.from(stdin, 'base64').toString('utf8');
+        if (!raw.startsWith('FAKE-DPAPI|')) throw new Error('bad blob');
+        return raw.slice('FAKE-DPAPI|'.length);
+      }
+      return Buffer.from(`FAKE-DPAPI|${stdin}`, 'utf8').toString('base64');
+    };
+    const dp = dpapiProvider({ dir, exec, platform: 'win32' });
+    await dp.set('account:acc-1', ACCOUNT_TOKEN);
+    expect(fs.readFileSync(path.join(dir, 'secrets.dpapi.json'), 'utf8')).not.toContain(ACCOUNT_TOKEN);
+    expect(await dp.get('account:acc-1')).toBe(ACCOUNT_TOKEN);
+    expect(await dpapiProvider({ dir, exec, platform: 'win32' }).get('account:acc-1')).toBe(ACCOUNT_TOKEN);
+    for (const c of calls) expect(c.script).not.toContain(ACCOUNT_TOKEN);
+    await dp.clear('account:acc-1');
+    expect(await dp.get('account:acc-1')).toBeNull();
+    await expect(dp.set('account:Bad_ID', ACCOUNT_TOKEN)).rejects.toThrow('invalid secret key');
+  });
+
+  it('SecretChain.has works for an account key', async () => {
+    const chain = new SecretChain([
+      secretsCliProvider({
+        available: () => true,
+        read: async (entry, parse) => parse(entry === 'tools/cr-account-x.enc' ? `${ACCOUNT_TOKEN}\n` : ''),
+      }),
+    ]);
+    expect(await chain.has('account:x')).toBe(true);
+    expect(await chain.has('account:y')).toBe(false);
+    expect(await chain.sourceOf('account:x')).toBe('secrets-cli');
+    expect(await chain.get('account:Bad_ID')).toBeNull();
   });
 });
 

@@ -209,6 +209,8 @@ export interface RunAttachOptions {
   eofSettleMs?: number;
   /** How long a missing job is waited for after a reconnect (the server resumes it a moment after it listens). */
   rejoinMs?: number;
+  /** App-lock session cookie (`cr_session=...`) for the WebSocket handshake, when the server is locked. */
+  cookie?: string;
 }
 
 /** Runs an interactive attach until detach / close / job end. Resolves with the exit code. */
@@ -291,7 +293,7 @@ export function runAttach(o: RunAttachOptions): Promise<number> {
       for (let i = 0; i < tries && !finished; i++) {
         await new Promise((r) => setTimeout(r, o.reconnectMs ?? 1500));
         if (finished) return;
-        const c = new CrClient(o.port);
+        const c = new CrClient(o.port, { cookie: o.cookie });
         try {
           await c.connect(2000);
         } catch {
@@ -328,7 +330,7 @@ export function runAttach(o: RunAttachOptions): Promise<number> {
       maybeLeaveAfterEof();
     });
 
-    const first = new CrClient(o.port);
+    const first = new CrClient(o.port, { cookie: o.cookie });
     first.connect().then(
       () => {
         attachClient(first);

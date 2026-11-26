@@ -1,5 +1,9 @@
 // Server messages (srv.*). Each value equals the Thai fallback the server sends in its `error`/`text` field.
 export const serverTh = {
+  'srv.account.locked': 'โปรไฟล์นี้ถูกล็อก — ใส่รหัสผ่านเพื่อปลดล็อก',
+  'srv.account.noToken': 'ยังไม่มี token ของบัญชีนี้ — เชื่อมต่อบัญชีที่หน้า จัดการโปรไฟล์ ก่อน',
+  'srv.account.switchFailed': 'ปิดงานเดิมไม่สำเร็จ — ยังไม่ได้สลับบัญชี',
+  'srv.account.unknown': 'ไม่พบโปรไฟล์บัญชีนี้',
   'srv.api.badJson': 'JSON ไม่ถูกต้อง',
   'srv.api.bodyTooLarge': 'คำขอใหญ่เกินไป',
   'srv.clip.folderInvalid': 'ชื่อโฟลเดอร์ไม่ถูกต้อง',

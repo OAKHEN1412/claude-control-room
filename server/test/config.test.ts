@@ -11,10 +11,13 @@ import {
   effectivePort,
   effectiveVideosDir,
   envOverrides,
+  loadAppLock,
   loadConfig,
   parseConfig,
+  saveAppLock,
   saveConfig,
   validateConfigPatch,
+  type AppLockRecord,
 } from '../src/config';
 
 const tmp: string[] = [];
@@ -278,5 +281,64 @@ describe('env-wins helpers', () => {
     expect(envOverrides({ PORT: '9000', CR_VIDEOS_DIR: 'Q:/v', CR_EXTRA_CWDS: '   ' })).toEqual({
       port: true, galleryRoots: false, videosDir: true, extraCwds: false,
     });
+  });
+});
+
+// ---- app lock record (config.json key "appLock") --------------------------------------------------------------
+
+const FAKE_REC: AppLockRecord = {
+  v: 1,
+  kdf: 'scrypt',
+  N: 1024,
+  r: 8,
+  p: 1,
+  salt: Buffer.alloc(16, 1).toString('base64'),
+  hash: Buffer.alloc(32, 2).toString('base64'),
+};
+
+describe('appLock record in config.json', () => {
+  it('saveAppLock writes the record and loadAppLock reads it back', () => {
+    const dir = tmpDir();
+    saveAppLock(dir, FAKE_REC);
+    expect(loadAppLock(dir)).toEqual(FAKE_REC);
+    saveAppLock(dir, null);
+    expect(loadAppLock(dir)).toBeNull();
+  });
+
+  it('saveAppLock keeps every other key of the file', () => {
+    const dir = tmpDir();
+    saveConfig({ language: 'th' }, dir);
+    saveAppLock(dir, FAKE_REC);
+    expect(loadConfig(dir).config.language).toBe('th');
+    expect(loadAppLock(dir)).toEqual(FAKE_REC);
+  });
+
+  it('saveConfig keeps the stored appLock through a normal save', () => {
+    const dir = tmpDir();
+    saveAppLock(dir, FAKE_REC);
+    saveConfig({ language: 'en', update: { check: false } }, dir);
+    expect(loadAppLock(dir)).toEqual(FAKE_REC);
+    expect(loadConfig(dir).config.language).toBe('en');
+    expect(fs.readFileSync(configFile(dir), 'utf8')).toContain('"appLock"');
+  });
+
+  it('loadConfig and parseConfig never expose appLock in the config object', () => {
+    const dir = tmpDir();
+    saveAppLock(dir, FAKE_REC);
+    expect('appLock' in loadConfig(dir).config).toBe(false);
+    expect('appLock' in parseConfig(JSON.stringify({ appLock: FAKE_REC })).config).toBe(false);
+  });
+
+  it('a malformed stored appLock loads as null, never throws', () => {
+    const dir = tmpDir();
+    fs.writeFileSync(configFile(dir), JSON.stringify({ appLock: { v: 1, kdf: 'scrypt', N: 1000, r: 8, p: 1, salt: 'x', hash: 'y' } }), 'utf8');
+    expect(loadAppLock(dir)).toBeNull();
+    fs.writeFileSync(configFile(dir), 'not json', 'utf8');
+    expect(loadAppLock(dir)).toBeNull();
+  });
+
+  it('validateConfigPatch refuses appLock, both to set and to clear', () => {
+    expect(validateConfigPatch({ appLock: FAKE_REC })).toEqual({ ok: false, error: 'unknown key' });
+    expect(validateConfigPatch({ appLock: null })).toEqual({ ok: false, error: 'unknown key' });
   });
 });

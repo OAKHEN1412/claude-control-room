@@ -1,0 +1,202 @@
+/* Account chip (3B) and usage-limit switch card (3C). Uses the app tokens only; the profile colour is the avatar only. */
+.acct-job-wrap {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+
+.acct-job-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 26px;
+  padding: 2px 10px 2px 3px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.acct-job-chip.is-readonly {
+  cursor: default;
+}
+
+.acct-job-chip.is-disabled,
+.acct-job-chip:disabled {
+  color: var(--muted);
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.acct-job-chip:focus-visible,
+.acct-job-row:focus-visible,
+.acct-limit-row:focus-visible,
+.acct-job-btn:focus-visible,
+.acct-limit a:focus-visible {
+  outline: 2px solid #CFCFCF;
+  outline-offset: 2px;
+}
+
+.acct-job-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.acct-job-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  min-width: 230px;
+  max-width: min(320px, calc(100vw - 32px));
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+.acct-job-row,
+.acct-limit-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.acct-job-row:hover:not(:disabled),
+.acct-limit-row:hover:not(:disabled) {
+  background: var(--panel-3);
+}
+
+.acct-job-row.is-current {
+  font-weight: 600;
+}
+
+.acct-limit-row:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.acct-job-badge {
+  flex: none;
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.acct-job-badge.is-limit {
+  color: var(--error);
+  font-weight: 600;
+}
+
+.acct-job-tick {
+  flex: none;
+  color: var(--text-2);
+}
+
+.acct-job-confirm {
+  display: grid;
+  gap: 8px;
+  padding: 8px 6px;
+}
+
+.acct-job-confirm-text {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.acct-job-err {
+  margin: 0;
+  font-size: 12px;
+  color: var(--error);
+  overflow-wrap: anywhere;
+}
+
+.acct-job-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.acct-job-btn {
+  min-height: 30px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.acct-job-btn.is-primary {
+  color: var(--on-accent);
+  background: var(--text);
+  border-color: var(--text);
+}
+
+.acct-job-btn:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.acct-limit {
+  display: grid;
+  gap: 6px;
+  margin: 6px 0;
+  padding: 10px 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.acct-limit-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--error);
+  overflow-wrap: anywhere;
+}
+
+.acct-limit-heading {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.acct-limit-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.acct-limit-note,
+.acct-job-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.acct-limit a {
+  color: var(--text-2);
+}

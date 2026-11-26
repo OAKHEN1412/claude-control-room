@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { configFile, type CrConfig } from '../src/config';
+import { configFile, loadAppLock, saveAppLock, type AppLockRecord, type CrConfig } from '../src/config';
 import { SettingsApi, type SecretsAdmin } from '../src/settingsApi';
 
 // Fake key only. Never a real credential.
@@ -271,5 +271,58 @@ describe('SettingsApi over HTTP', () => {
     expect(r.json.config.language).toBe('en');
     expect(r.json.config.port).toBeNull();
     expect(r.json.warnings.join('\n')).toMatch(/port/);
+  });
+});
+
+describe('SettingsApi and the app lock record', () => {
+  // Fake verifier values. They are never a real hash of a real password.
+  const REC: AppLockRecord = {
+    v: 1,
+    kdf: 'scrypt',
+    N: 1024,
+    r: 8,
+    p: 1,
+    salt: Buffer.alloc(16, 3).toString('base64'),
+    hash: Buffer.alloc(32, 4).toString('base64'),
+  };
+
+  it('GET /api/settings never returns the appLock record', async () => {
+    const dir = tmpDir();
+    saveAppLock(dir, REC);
+    const s = await start({ dir });
+    const r = await call(s.base, 'GET', '/api/settings');
+    expect(r.status).toBe(200);
+    expect(r.json).not.toHaveProperty('appLock');
+    expect(r.json.config).not.toHaveProperty('appLock');
+    expect(r.text).not.toContain(REC.hash);
+  });
+
+  it('PUT /api/settings cannot set the appLock record', async () => {
+    const dir = tmpDir();
+    const s = await start({ dir });
+    const r = await call(s.base, 'PUT', '/api/settings', { body: { appLock: REC } });
+    expect(r.status).toBe(400);
+    expect(r.json).toEqual({ ok: false, error: 'unknown key' });
+    expect(loadAppLock(dir)).toBeNull();
+  });
+
+  it('PUT /api/settings cannot clear the appLock record', async () => {
+    const dir = tmpDir();
+    saveAppLock(dir, REC);
+    const s = await start({ dir });
+    const r = await call(s.base, 'PUT', '/api/settings', { body: { appLock: null } });
+    expect(r.status).toBe(400);
+    expect(loadAppLock(dir)).toEqual(REC);
+  });
+
+  it('a normal PUT keeps the stored appLock record in config.json', async () => {
+    const dir = tmpDir();
+    saveAppLock(dir, REC);
+    const s = await start({ dir });
+    const r = await call(s.base, 'PUT', '/api/settings', { body: { language: 'en' } });
+    expect(r.status).toBe(200);
+    expect(r.text).not.toContain(REC.hash);
+    expect(loadAppLock(dir)).toEqual(REC);
+    expect(fs.readFileSync(configFile(dir), 'utf8')).toContain(REC.hash);
   });
 });

@@ -276,6 +276,40 @@ function withoutUndefined<T extends object>(o: T): Partial<T> {
   return out;
 }
 
+/** Raw top-level object of config.json, or null when the file is missing, unreadable or not a JSON object. */
+function readRawObject(dir: string): Record<string, unknown> | null {
+  let text: string;
+  try {
+    text = fs.readFileSync(configFile(dir), 'utf8');
+  } catch {
+    return null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(text.charCodeAt(0) === BOM ? text.slice(1) : text);
+    return isPlainObject(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Writes the whole object to config.json through a temp file and a rename, so a crash never leaves a half file. */
+function writeConfigObject(dir: string, obj: object): void {
+  fs.mkdirSync(dir, { recursive: true });
+  const file = configFile(dir);
+  const tmp = `${file}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
+  fs.writeFileSync(tmp, `${JSON.stringify(obj, null, 2)}\n`, 'utf8');
+  try {
+    fs.renameSync(tmp, file);
+  } catch (e) {
+    try {
+      fs.rmSync(tmp, { force: true });
+    } catch {
+      // best effort cleanup
+    }
+    throw e;
+  }
+}
+
 /** Loads the current file, shallow-merges the patch (update field by field), writes atomically, returns the new config. */
 export function saveConfig(patch: CrConfigPatch, dir: string = dataDir()): CrConfig {
   const current = loadConfig(dir).config;
@@ -287,21 +321,52 @@ export function saveConfig(patch: CrConfigPatch, dir: string = dataDir()): CrCon
   };
   // Re-parse so the written file is always in the normalised shape.
   const next = parseConfig(JSON.stringify(merged)).config;
-  fs.mkdirSync(dir, { recursive: true });
-  const file = configFile(dir);
-  const tmp = `${file}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
-  fs.writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
-  try {
-    fs.renameSync(tmp, file);
-  } catch (e) {
-    try {
-      fs.rmSync(tmp, { force: true });
-    } catch {
-      // best effort cleanup
-    }
-    throw e;
-  }
+  // appLock is not a CrConfig field, so the normalised shape drops it. Keep whatever is stored, as it is.
+  const raw = readRawObject(dir);
+  const out: Record<string, unknown> = {
+    ...next,
+    ...(raw && raw.appLock !== undefined ? { appLock: raw.appLock } : {}),
+  };
+  writeConfigObject(dir, out);
   return next;
+}
+
+// ---- app lock record ----------------------------------------------------------------------------------------------
+
+/** Stored app-lock verifier: scrypt salt and hash only. The password itself is never written anywhere. */
+export interface AppLockRecord {
+  v: 1;
+  kdf: 'scrypt';
+  N: number;
+  r: 8;
+  p: 1;
+  salt: string;
+  hash: string;
+}
+
+function parseAppLock(raw: unknown): AppLockRecord | null {
+  if (!isPlainObject(raw)) return null;
+  if (raw.v !== 1 || raw.kdf !== 'scrypt' || raw.r !== 8 || raw.p !== 1) return null;
+  const n = raw.N;
+  if (typeof n !== 'number' || !Number.isInteger(n) || n < 1024 || n > 65536 || (n & (n - 1)) !== 0) return null;
+  if (typeof raw.salt !== 'string' || typeof raw.hash !== 'string') return null;
+  if (Buffer.from(raw.salt, 'base64').length !== 16 || Buffer.from(raw.hash, 'base64').length !== 32) return null;
+  return { v: 1, kdf: 'scrypt', N: n, r: 8, p: 1, salt: raw.salt, hash: raw.hash };
+}
+
+/** The stored app-lock record, or null when no password is set or the stored value is malformed. Never throws. */
+export function loadAppLock(dir: string = dataDir()): AppLockRecord | null {
+  const raw = readRawObject(dir);
+  if (!raw) return null;
+  return parseAppLock(raw.appLock);
+}
+
+/** Replaces (or with null removes) the stored app-lock record. Every other key of config.json is kept. */
+export function saveAppLock(dir: string, rec: AppLockRecord | null): void {
+  const out: Record<string, unknown> = { ...(readRawObject(dir) ?? {}) };
+  if (rec === null) delete out.appLock;
+  else out.appLock = rec;
+  writeConfigObject(dir, out);
 }
 
 // ---- env-wins helpers -------------------------------------------------------------------------------------------

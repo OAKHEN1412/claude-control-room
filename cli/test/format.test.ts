@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import type { AccountInfo } from '../../shared/accounts.ts';
+import { TERMINAL_ACCOUNT_ID } from '../../shared/accounts.ts';
 import type { RunnerState, SessionInfo, TimelineEvent } from '../../shared/protocol.ts';
-import { TimelinePrinter, eventLines, formatList, listRows, makePaint, newEvents, eventKey, toolCall } from '../src/format.ts';
+import { TimelinePrinter, eventLines, formatList, listRows, makePaint, newEvents, eventKey, profileLabel, toolCall } from '../src/format.ts';
 
 const plain = makePaint(false);
 const ev = (ts: number, kind: TimelineEvent['kind'], text: string): TimelineEvent => ({ ts, kind, text });
@@ -130,5 +132,90 @@ describe('cr ls rows', () => {
     expect(lines[0]).toContain('Hello');
     expect(lines[0]).toContain('C:\\w');
     expect(formatList([], plain)[0]).toContain('ไม่มีงาน');
+  });
+});
+
+describe('cr ls profile column', () => {
+  const sess = (id: string): SessionInfo => ({
+    sessionId: id,
+    pid: 1,
+    name: 'n',
+    cwd: 'C:\\w',
+    kind: 'interactive',
+    title: 'T',
+    model: null,
+    effort: null,
+    status: 'idle',
+    thought: '',
+    startedAt: 0,
+    lastActivity: 0,
+    timeline: [],
+    subagents: [],
+  });
+  const run = (id: string, over: Partial<RunnerState> = {}): RunnerState => ({
+    sessionId: id,
+    cwd: 'C:\\w',
+    alive: true,
+    pid: 5,
+    busy: false,
+    queued: 0,
+    model: 'haiku',
+    effort: 'high',
+    confirmed: true,
+    permissionMode: 'default',
+    remoteControl: false,
+    pending: [],
+    startedAt: 0,
+    ...over,
+  });
+  const acct = (id: string, name: string): AccountInfo => ({
+    id,
+    name,
+    color: '#ef4444',
+    letter: 'W',
+    note: '',
+    builtin: id === TERMINAL_ACCOUNT_ID,
+    tokenState: 'set',
+    fingerprint: null,
+    createdAt: 1,
+    tokenAt: null,
+    expiresAt: null,
+    lastCheckAt: null,
+    lastCheckOk: null,
+    usage: null,
+    hidden: false,
+    locked: false, hasPassword: false,
+  });
+  const accounts = [acct('terminal', 'Terminal login'), acct('work-1', 'Work Account')];
+
+  it('a web row shows its profile name; terminal login prints "terminal"; an unknown id prints the id', () => {
+    const rows = listRows(
+      [sess('a1'), sess('a2'), sess('a3')],
+      [run('a1', { accountId: 'work-1' }), run('a2', { accountId: 'terminal' }), run('a3', { accountId: 'gone' })],
+      false,
+      accounts,
+    );
+    expect(rows.map((r) => r.account)).toEqual(['Work Account', 'terminal', 'gone']);
+    const lines = formatList(rows, plain);
+    expect(lines[0]).toContain('Work Account');
+    expect(lines[1]).toMatch(/terminal\s+C:\\w$/);
+    expect(lines[2]).toMatch(/gone\s+C:\\w$/);
+  });
+
+  it('rows without an accountId get no account and no column', () => {
+    const rows = listRows([sess('a1')], [run('a1')], false, accounts);
+    expect(rows[0].account).toBeUndefined();
+    expect(formatList(rows, plain)).toEqual(formatList(listRows([sess('a1')], [run('a1')], false), plain));
+  });
+
+  it('the profile column is aligned across rows when some rows have one', () => {
+    const rows = listRows([sess('a1'), sess('a2')], [run('a1', { accountId: 'work-1' }), run('a2')], false, accounts);
+    const [withAcct, without] = formatList(rows, plain);
+    expect(withAcct.indexOf('Work Account')).toBe(without.indexOf('C:\\w') - 'Work Account'.length - 2);
+  });
+
+  it('profileLabel: terminal prints "terminal" even when the list names it differently', () => {
+    expect(profileLabel('terminal', accounts)).toBe('terminal');
+    expect(profileLabel('work-1', [])).toBe('work-1');
   });
 });

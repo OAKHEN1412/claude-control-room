@@ -1,5 +1,9 @@
 import type { serverTh } from './server.th';
 export const serverEn: Record<keyof typeof serverTh, string> = {
+  'srv.account.locked': 'This profile is locked - enter its password to unlock',
+  'srv.account.noToken':'This profile has no token yet — connect it on the Manage profiles page first',
+  'srv.account.switchFailed': 'Could not close the old process — account not switched',
+  'srv.account.unknown': 'That profile does not exist',
   'srv.api.badJson': 'Invalid JSON',
   'srv.api.bodyTooLarge': 'Request too large',
   'srv.clip.folderInvalid': 'Invalid folder name',

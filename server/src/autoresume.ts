@@ -31,6 +31,8 @@ export class AutoResume {
   private readonly now: () => number;
   private readonly last = new Map<string, string>(); // session id -> last written row (JSON without updatedAt)
   private readonly restoring = new Map<string, number>(); // session id -> restore time
+  // restored jobs that waited for a locked profile: their resume is timed again when the profile is unlocked
+  private readonly waitedAtRestore = new Set<string>();
   private suspended = false;
 
   constructor(o: AutoResumeOptions) {
@@ -61,6 +63,7 @@ export class AutoResume {
   readonly forget = (sessionId: string): void => {
     if (this.suspended) return;
     this.restoring.delete(sessionId);
+    this.waitedAtRestore.delete(sessionId);
     this.last.delete(sessionId);
     this.o.db.deleteRunnerJob(sessionId);
   };
@@ -72,6 +75,11 @@ export class AutoResume {
 
   private readonly onChange = (s: RunnerState): void => {
     if (this.suspended) return;
+    if (s.waitingUnlock !== undefined) {
+      // waits for a locked profile: no child yet, so it is not a failed resume; the row stays
+      if (this.restoring.delete(s.sessionId)) this.waitedAtRestore.add(s.sessionId);
+      return;
+    }
     if (!s.alive) {
       const t = this.restoring.get(s.sessionId);
       if (t !== undefined) {
@@ -83,6 +91,7 @@ export class AutoResume {
       }
       return;
     }
+    if (this.waitedAtRestore.delete(s.sessionId)) this.restoring.set(s.sessionId, this.now()); // unlocked and launched: the fast-failure check applies again
     const row: Omit<RunnerJobRow, 'updatedAt'> = {
       sessionId: s.sessionId,
       cwd: s.cwd,
@@ -111,6 +120,7 @@ export class AutoResume {
   restore(): number {
     const rows = this.o.db.listRunnerJobs();
     let n = 0;
+    let waiting = 0;
     for (const r of rows) {
       if (n >= this.max) {
         this.o.db.deleteRunnerJob(r.sessionId);
@@ -124,7 +134,9 @@ export class AutoResume {
         this.restoring.set(r.sessionId, this.now());
         // the folder was whitelisted when the job started and is re-checked above: skip the (still empty) whitelist
         this.o.runner.adopt({ sessionId: r.sessionId, cwd: r.cwd, effort, rawModel, permissionMode: resumeMode(r.permissionMode) }, { trustedCwd: true });
-        n++;
+        // a job on a locked profile is only waiting (no child yet); its row stays until the password is entered
+        if (this.o.runner.isAlive(r.sessionId)) n++;
+        else waiting++;
       } catch (e) {
         this.restoring.delete(r.sessionId);
         this.log(`${r.sessionId} not resumed: ${e instanceof Error ? e.message : String(e)}`);
@@ -132,6 +144,7 @@ export class AutoResume {
       }
     }
     if (n > 0) this.log(`resumed ${n} job(s) idle`);
+    if (waiting > 0) this.log(`${waiting} job(s) wait for their account to be unlocked`);
     return n;
   }
 }

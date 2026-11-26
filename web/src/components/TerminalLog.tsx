@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { TimelineEvent } from '../../../shared/protocol';
-import { formatTimeline, thoughtLine, type TermLine } from '../terminalLines';
+import { formatTimeline, mergeAccountSwitches, switchName, thoughtLine, type AccountSwitch, type TermLine } from '../terminalLines';
 import { useT, type TKey } from '../i18n';
 import './terminal.css';
 
@@ -9,7 +9,12 @@ export interface TerminalLogProps {
   /** Latest thought, shown as a dim ✻ line at the end. */
   thought?: string;
   emptyText?: string;
+  /** Account switches of the session (RunnerState.accountLog): one centred divider each, in time order. */
+  accountLog?: ReadonlyArray<AccountSwitch>;
 }
+
+/** Centred muted divider for an account switch (inline, so no stylesheet change is needed). */
+const SWITCH_STYLE = { listStyle: 'none', textAlign: 'center', color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: 12, margin: '6px 0' } as const;
 
 function hhmmss(ts: number): string {
   const d = new Date(ts);
@@ -17,7 +22,7 @@ function hhmmss(ts: number): string {
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
-const KIND_KEY: Record<TermLine['kind'], TKey> = {
+const KIND_KEY: Record<Exclude<TermLine['kind'], 'switch'>, TKey> = {
   user: 'panels.termLog.user',
   assistant: 'panels.termLog.assistant',
   tool: 'panels.termLog.tool',
@@ -28,6 +33,13 @@ const KIND_KEY: Record<TermLine['kind'], TKey> = {
 function Line({ line, open, onToggle }: { line: TermLine; open: boolean; onToggle: () => void }) {
   const t = useT();
   const text = open ? line.full : line.text;
+  if (line.kind === 'switch') {
+    return (
+      <li className="tl-line tl-switch" style={SWITCH_STYLE}>
+        <span className="tl-text">{line.text}</span>
+      </li>
+    );
+  }
   return (
     <li className={`tl-line tl-${line.kind}${line.nested ? ' is-nested' : ''}${line.tone === 'limit' ? ' tl-limit' : ''}`}>
       <span className="tl-mark" aria-hidden="true">
@@ -51,11 +63,14 @@ function Line({ line, open, onToggle }: { line: TermLine; open: boolean; onToggl
 }
 
 /** The session timeline drawn like the Claude Code terminal. Presentation only; scrolling stays with the parent. */
-export function TerminalLog({ events, thought = '', emptyText }: TerminalLogProps) {
+export function TerminalLog({ events, thought = '', emptyText, accountLog }: TerminalLogProps) {
   const t = useT();
   const empty = emptyText ?? t('panels.termLog.empty');
   const [openKeys, setOpenKeys] = useState<ReadonlySet<string>>(() => new Set());
-  const lines = formatTimeline(events);
+  const terminalName = t('acct.terminal.name');
+  const lines = mergeAccountSwitches(formatTimeline(events), accountLog, (sw, time) =>
+    t('acct.tl.switch', { from: switchName(sw.from, terminalName), to: switchName(sw.to, terminalName), time }),
+  );
   const think = thoughtLine(thought);
   const toggle = (key: string) =>
     setOpenKeys((cur) => {
